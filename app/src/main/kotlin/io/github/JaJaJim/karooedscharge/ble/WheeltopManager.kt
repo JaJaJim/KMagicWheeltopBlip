@@ -144,9 +144,13 @@ class WheeltopManager private constructor(context: Context) {
                     disconnectGatt()
                     _connectionState.value = ConnectionState.DISCONNECTED
                     logDiagnostic("Cleared bound gear.")
-                } else {
-                    logDiagnostic("Loaded bound gear: $mac")
+                } else if (_isMonitored.value) {
+                    logDiagnostic("Loaded bound gear: $mac (Monitoring ON)")
                     connectToBoundDevice(mac)
+                } else {
+                    logDiagnostic("Loaded bound gear: $mac (Monitoring OFF)")
+                    disconnectGatt()
+                    _connectionState.value = ConnectionState.DISCONNECTED
                 }
             }
         }
@@ -349,7 +353,6 @@ class WheeltopManager private constructor(context: Context) {
             _isMonitored.value = false
             remotePreferences.saveBoundWheeltop(address, name)
             logDiagnostic("Bound gear: $name ($address)", isSuccess = true)
-            connectToBoundDevice(address)
         }
     }
 
@@ -364,6 +367,13 @@ class WheeltopManager private constructor(context: Context) {
 
     @SuppressLint("MissingPermission")
     fun connectToBoundDevice(macAddress: String) {
+        if (!_isMonitored.value) {
+            logDiagnostic("Skip GATT connection: Monitoring is OFF")
+            disconnectGatt()
+            _connectionState.value = ConnectionState.DISCONNECTED
+            return
+        }
+
         if (bluetoothAdapter == null || !bluetoothAdapter!!.isEnabled) {
             logDiagnostic("Bluetooth disabled!", isError = true)
             _connectionState.value = ConnectionState.DISCONNECTED
@@ -405,10 +415,11 @@ class WheeltopManager private constructor(context: Context) {
 
     private fun startHeartbeat() {
         heartbeatJob?.cancel()
+        if (!_isMonitored.value) return
         heartbeatJob = scope.launch(Dispatchers.IO) {
-            while (isActive && _connectionState.value == ConnectionState.CONNECTED) {
+            while (isActive && _connectionState.value == ConnectionState.CONNECTED && _isMonitored.value) {
                 delay(3000)
-                if (_isAuthenticatedState.value) {
+                if (_isAuthenticatedState.value && _isMonitored.value) {
                     sendAppProtocolCommand("Heartbeat (0xFA)", 0xFA, byteArrayOf(0x80.toByte()))
                 }
             }
