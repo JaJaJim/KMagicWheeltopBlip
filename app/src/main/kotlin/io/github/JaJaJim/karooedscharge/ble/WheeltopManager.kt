@@ -272,8 +272,18 @@ class WheeltopManager private constructor(context: Context) {
             remotePreferences.saveIsMonitored(enabled)
             if (enabled) {
                 stopScan()
-            } else if (_boundMacAddress.value == null) {
-                startScan()
+                val mac = _boundMacAddress.value
+                if (!mac.isNullOrBlank() && _connectionState.value == ConnectionState.DISCONNECTED) {
+                    connectToBoundDevice(mac)
+                }
+            } else {
+                disconnectGatt()
+                _connectionState.value = ConnectionState.DISCONNECTED
+                _batteryRearVolts.value = null
+                _batteryFrontVolts.value = null
+                _batteryShifterRightVolts.value = null
+                _batteryShifterLeftVolts.value = null
+                logDiagnostic("Monitoring disabled: BLE GATT disconnected & released")
             }
         }
     }
@@ -412,8 +422,9 @@ class WheeltopManager private constructor(context: Context) {
 
     private fun scheduleReconnect(macAddress: String) {
         cancelScheduledReconnect()
+        if (!_isMonitored.value) return
         val runnable = Runnable {
-            if (_boundMacAddress.value == macAddress && _connectionState.value != ConnectionState.CONNECTED) {
+            if (_boundMacAddress.value == macAddress && _connectionState.value != ConnectionState.CONNECTED && _isMonitored.value) {
                 logDiagnostic("Re-connecting to $macAddress")
                 connectToBoundDevice(macAddress)
             }
