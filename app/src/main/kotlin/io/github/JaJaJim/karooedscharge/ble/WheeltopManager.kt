@@ -1,3 +1,5 @@
+@file:OptIn(ExperimentalStdlibApi::class)
+
 package io.github.JaJaJim.karooedscharge.ble
 
 import android.annotation.SuppressLint
@@ -83,6 +85,7 @@ class WheeltopManager private constructor(context: Context) {
     private var isScanningInternal = false
     private var sessionKeyByte: Byte? = null
     private var heartbeatJob: Job? = null
+    private var reScanTimerJob: Job? = null
 
     private val writeMutex = Mutex()
     @Volatile
@@ -100,14 +103,26 @@ class WheeltopManager private constructor(context: Context) {
     private val _boundDeviceName = MutableStateFlow<String?>(null)
     val boundDeviceName: StateFlow<String?> = _boundDeviceName.asStateFlow()
 
+    private val _isMonitored = MutableStateFlow(false)
+    val isMonitored: StateFlow<Boolean> = _isMonitored.asStateFlow()
+
+    private val _isReScanning = MutableStateFlow(false)
+    val isReScanning: StateFlow<Boolean> = _isReScanning.asStateFlow()
+
     private val _batteryRearVolts = MutableStateFlow<Float?>(null)
     val batteryRearVolts: StateFlow<Float?> = _batteryRearVolts.asStateFlow()
 
     private val _batteryFrontVolts = MutableStateFlow<Float?>(null)
     val batteryFrontVolts: StateFlow<Float?> = _batteryFrontVolts.asStateFlow()
 
-    private val _batteryShifterVolts = MutableStateFlow<Float?>(null)
-    val batteryShifterVolts: StateFlow<Float?> = _batteryShifterVolts.asStateFlow()
+    private val _batteryShifterRightVolts = MutableStateFlow<Float?>(null)
+    val batteryShifterRightVolts: StateFlow<Float?> = _batteryShifterRightVolts.asStateFlow()
+
+    private val _batteryShifterLeftVolts = MutableStateFlow<Float?>(null)
+    val batteryShifterLeftVolts: StateFlow<Float?> = _batteryShifterLeftVolts.asStateFlow()
+
+    private val _currentRssi = MutableStateFlow<Int?>(null)
+    val currentRssi: StateFlow<Int?> = _currentRssi.asStateFlow()
 
     private val _isAuthenticatedState = MutableStateFlow(false)
     val isAuthenticatedState: StateFlow<Boolean> = _isAuthenticatedState.asStateFlow()
@@ -120,7 +135,7 @@ class WheeltopManager private constructor(context: Context) {
     private var autoReconnectRunnable: Runnable? = null
 
     init {
-        logDiagnostic("KarooEDSCharge WheeltopManager initialisiert.")
+        logDiagnostic("KarooEDSCharge WheeltopManager initialized.")
 
         scope.launch {
             remotePreferences.boundWheeltopMac.collectLatest { mac ->
@@ -128,10 +143,9 @@ class WheeltopManager private constructor(context: Context) {
                 if (mac.isNullOrBlank()) {
                     disconnectGatt()
                     _connectionState.value = ConnectionState.DISCONNECTED
-                    logDiagnostic("Gebundene Schaltung gelöscht.")
+                    logDiagnostic("Cleared bound gear.")
                 } else {
-                    stopScan()
-                    logDiagnostic("Gebundene Schaltung geladen: $mac")
+                    logDiagnostic("Loaded bound gear: $mac")
                     connectToBoundDevice(mac)
                 }
             }
@@ -140,6 +154,27 @@ class WheeltopManager private constructor(context: Context) {
         scope.launch {
             remotePreferences.boundWheeltopName.collectLatest { name ->
                 _boundDeviceName.value = name
+            }
+        }
+
+        scope.launch {
+            remotePreferences.isMonitored.collectLatest { monitored ->
+                _isMonitored.value = monitored
+                if (monitored) {
+                    stopScan()
+                } else if (_boundMacAddress.value == null) {
+                    startScan()
+                }
+            }
+        }
+
+        // Automatic periodic background scan when not monitored
+        scope.launch {
+            while (isActive) {
+                delay(2000)
+                if (!_isMonitored.value && !_isReScanning.value && !isScanningInternal && _boundMacAddress.value == null) {
+                    startScan()
+                }
             }
         }
     }
@@ -160,25 +195,23 @@ class WheeltopManager private constructor(context: Context) {
     }
 
     fun isWheeltopDerailleurDevice(name: String?, result: ScanResult?): Boolean {
-        val uppercaseName = (name ?: result?.scanRecord?.deviceName)?.uppercase() ?: ""
+        val rawName = name ?: result?.scanRecord?.deviceName ?: return false
+        if (rawName.isBlank()) return false
 
-        val isStrictMatch = uppercaseName.contains("EDS TX") ||
-                uppercaseName.contains("EDS OX") ||
-                uppercaseName.contains("EDS XT") ||
+        val uppercaseName = rawName.uppercase()
+        return uppercaseName.contains("EDS XT") ||
+                uppercaseName.contains("EDS-XT") ||
+                uppercaseName.contains("EDS TX") ||
                 uppercaseName.contains("EDS-TX") ||
+                uppercaseName.contains("EDS OX") ||
                 uppercaseName.contains("EDS-OX") ||
-                uppercaseName.contains("EDS-XT")
-
-        val serviceUuids = result?.scanRecord?.serviceUuids
-        val hasNusService = serviceUuids?.any { it.uuid.toString().equals(NUS_SERVICE_UUID.toString(), ignoreCase = true) } == true
-
-        return isStrictMatch || (uppercaseName.startsWith("EDS") && hasNusService)
+                uppercaseName.contains("EDS")
     }
 
     @SuppressLint("MissingPermission")
     fun startScan() {
         if (bluetoothAdapter == null || !bluetoothAdapter!!.isEnabled) {
-            logDiagnostic("Bluetooth ist deaktiviert!", isError = true)
+            logDiagnostic("Bluetooth disabled", isError = true)
             return
         }
 
@@ -187,9 +220,6 @@ class WheeltopManager private constructor(context: Context) {
         try {
             scanner.stopScan(scanCallback)
         } catch (_: Exception) {}
-
-        foundDevicesMap.clear()
-        _scannedDevices.value = emptyList()
 
         val settings = ScanSettings.Builder()
             .setScanMode(ScanSettings.SCAN_MODE_LOW_LATENCY)
@@ -201,9 +231,9 @@ class WheeltopManager private constructor(context: Context) {
             if (_boundMacAddress.value == null) {
                 _connectionState.value = ConnectionState.SCANNING
             }
-            logDiagnostic("BLE-Suchlauf gestartet (Low Latency)")
+            logDiagnostic("BLE scan started")
         } catch (e: Exception) {
-            logDiagnostic("Fehler beim Starten des Suchlaufs: ${e.message}", isError = true)
+            logDiagnostic("Scan error: ${e.message}", isError = true)
         }
     }
 
@@ -214,13 +244,38 @@ class WheeltopManager private constructor(context: Context) {
         try {
             scanner?.stopScan(scanCallback)
         } catch (e: Exception) {
-            logDiagnostic("Fehler beim Stoppen des Suchlaufs: ${e.message}", isError = true)
+            logDiagnostic("Error stopping scan: ${e.message}", isError = true)
         }
         isScanningInternal = false
         if (_boundMacAddress.value == null && _connectionState.value == ConnectionState.SCANNING) {
             _connectionState.value = ConnectionState.DISCONNECTED
         }
-        logDiagnostic("BLE-Suchlauf gestoppt.")
+        logDiagnostic("BLE scan stopped.")
+    }
+
+    fun triggerReScan() {
+        reScanTimerJob?.cancel()
+        reScanTimerJob = scope.launch {
+            _isReScanning.value = true
+            logDiagnostic("Manual Re-Scan triggered (1-minute timer)")
+            startScan()
+            delay(60_000) // 1 minute max
+            stopScan()
+            _isReScanning.value = false
+            logDiagnostic("Manual Re-Scan completed")
+        }
+    }
+
+    fun toggleMonitoring(enabled: Boolean) {
+        scope.launch {
+            _isMonitored.value = enabled
+            remotePreferences.saveIsMonitored(enabled)
+            if (enabled) {
+                stopScan()
+            } else if (_boundMacAddress.value == null) {
+                startScan()
+            }
+        }
     }
 
     private val scanCallback = object : ScanCallback() {
@@ -229,7 +284,7 @@ class WheeltopManager private constructor(context: Context) {
             result ?: return
             val device = result.device ?: return
             val address = device.address ?: return
-            val name = device.name ?: result.scanRecord?.deviceName ?: "Wheeltop EDS"
+            val rawName = device.name ?: result.scanRecord?.deviceName
             val rssi = result.rssi
 
             val boundMac = _boundMacAddress.value
@@ -238,10 +293,10 @@ class WheeltopManager private constructor(context: Context) {
                 return
             }
 
-            if (!isWheeltopDerailleurDevice(name, result)) return
+            if (!isWheeltopDerailleurDevice(rawName, result)) return
 
             val item = BleDeviceItem(
-                name = name,
+                name = rawName!!.trim(),
                 address = address,
                 rssi = rssi
             )
@@ -263,14 +318,17 @@ class WheeltopManager private constructor(context: Context) {
 
             if (voltageRaw in 150..850) {
                 val volts = voltageRaw / 100.0f
-                if (deviceType == 0x37 || deviceType == 0x38) {
-                    _batteryRearVolts.value = volts
-                    logDiagnostic("Akkuspannung Schaltwerk (Broadcast): $volts V", isSuccess = true)
-                } else if (deviceType == 0x39) {
-                    _batteryFrontVolts.value = volts
-                    logDiagnostic("Akkuspannung Umwerfer (Broadcast): $volts V", isSuccess = true)
-                } else if (deviceType == 0x36) {
-                    _batteryShifterVolts.value = volts
+                when (deviceType) {
+                    0x37, 0x38 -> {
+                        _batteryRearVolts.value = volts
+                    }
+                    0x39 -> {
+                        _batteryFrontVolts.value = volts
+                    }
+                    0x36 -> {
+                        _batteryShifterRightVolts.value = volts
+                        _batteryShifterLeftVolts.value = volts
+                    }
                 }
             }
         }
@@ -278,9 +336,9 @@ class WheeltopManager private constructor(context: Context) {
 
     fun bindDevice(address: String, name: String) {
         scope.launch {
-            stopScan()
+            _isMonitored.value = false
             remotePreferences.saveBoundWheeltop(address, name)
-            logDiagnostic("Gebundene Schaltung gespeichert: $name ($address)", isSuccess = true)
+            logDiagnostic("Bound gear: $name ($address)", isSuccess = true)
             connectToBoundDevice(address)
         }
     }
@@ -288,15 +346,16 @@ class WheeltopManager private constructor(context: Context) {
     fun unbindDevice() {
         scope.launch {
             disconnectGatt()
+            _isMonitored.value = false
             remotePreferences.clearBoundWheeltop()
-            logDiagnostic("Wheeltop Schaltung entbunden.")
+            logDiagnostic("Unbound gear.")
         }
     }
 
     @SuppressLint("MissingPermission")
     fun connectToBoundDevice(macAddress: String) {
         if (bluetoothAdapter == null || !bluetoothAdapter!!.isEnabled) {
-            logDiagnostic("Bluetooth ist deaktiviert!", isError = true)
+            logDiagnostic("Bluetooth disabled!", isError = true)
             _connectionState.value = ConnectionState.DISCONNECTED
             scheduleReconnect(macAddress)
             return
@@ -306,11 +365,11 @@ class WheeltopManager private constructor(context: Context) {
             val device = bluetoothAdapter?.getRemoteDevice(macAddress) ?: return
             disconnectGatt()
             _connectionState.value = ConnectionState.CONNECTING
-            logDiagnostic("Verbinde GATT zu $macAddress ...")
+            logDiagnostic("Connecting GATT to $macAddress ...")
 
             activeGatt = device.connectGatt(appContext, false, gattCallback, BluetoothDevice.TRANSPORT_LE)
         } catch (e: Exception) {
-            logDiagnostic("GATT-Verbindungsfehler: ${e.message}", isError = true)
+            logDiagnostic("GATT connection error: ${e.message}", isError = true)
             scheduleReconnect(macAddress)
         }
     }
@@ -355,7 +414,7 @@ class WheeltopManager private constructor(context: Context) {
         cancelScheduledReconnect()
         val runnable = Runnable {
             if (_boundMacAddress.value == macAddress && _connectionState.value != ConnectionState.CONNECTED) {
-                logDiagnostic("Re-Connect Versuch zu $macAddress")
+                logDiagnostic("Re-connecting to $macAddress")
                 connectToBoundDevice(macAddress)
             }
         }
@@ -374,7 +433,7 @@ class WheeltopManager private constructor(context: Context) {
             logDiagnostic("GATT State Change: status=$status, newState=$newState")
             if (newState == BluetoothProfile.STATE_CONNECTED) {
                 _connectionState.value = ConnectionState.CONNECTING
-                logDiagnostic("GATT Verbunden! Fordere MTU 247 an...")
+                logDiagnostic("GATT Connected! Requesting MTU 247...")
                 gatt.requestMtu(247)
             } else if (newState == BluetoothProfile.STATE_DISCONNECTED) {
                 _connectionState.value = ConnectionState.DISCONNECTED
@@ -393,7 +452,7 @@ class WheeltopManager private constructor(context: Context) {
                     activeGatt = null
                 }
 
-                logDiagnostic("GATT Getrennt (status=$status)", isError = true)
+                logDiagnostic("GATT Disconnected (status=$status)", isError = true)
                 val mac = _boundMacAddress.value
                 if (!mac.isNullOrBlank()) {
                     scheduleReconnect(mac)
@@ -403,14 +462,14 @@ class WheeltopManager private constructor(context: Context) {
 
         @SuppressLint("MissingPermission")
         override fun onMtuChanged(gatt: BluetoothGatt, mtu: Int, status: Int) {
-            logDiagnostic("MTU Ergebnis: mtu=$mtu status=$status. Suche Services...")
+            logDiagnostic("MTU Result: mtu=$mtu status=$status. Discovering services...")
             gatt.discoverServices()
         }
 
         @SuppressLint("MissingPermission")
         override fun onServicesDiscovered(gatt: BluetoothGatt, status: Int) {
             if (status != BluetoothGatt.GATT_SUCCESS) {
-                logDiagnostic("Service Discovery Fehlgeschlagen: status=$status", isError = true)
+                logDiagnostic("Service Discovery Failed: status=$status", isError = true)
                 return
             }
 
@@ -419,25 +478,25 @@ class WheeltopManager private constructor(context: Context) {
                 txCharacteristic = service.getCharacteristic(NUS_TX_UUID)
                 val rxChar = service.getCharacteristic(NUS_RX_UUID)
 
-                logDiagnostic("Nordic UART Service gefunden! Aktiviere RX-Notifications...")
+                logDiagnostic("Nordic UART Service found! Enabling RX notifications...")
 
                 if (rxChar != null) {
                     enableNotification(gatt, rxChar)
                 } else {
-                    logDiagnostic("RX Characteristic (6e400003) nicht gefunden!", isError = true)
+                    logDiagnostic("RX Characteristic (6e400003) not found!", isError = true)
                 }
             } else {
-                logDiagnostic("Nordic UART Service (6e400001) nicht gefunden!", isError = true)
+                logDiagnostic("Nordic UART Service (6e400001) not found!", isError = true)
             }
         }
 
         override fun onDescriptorWrite(gatt: BluetoothGatt?, descriptor: BluetoothGattDescriptor?, status: Int) {
             val isOk = (status == BluetoothGatt.GATT_SUCCESS)
-            logDiagnostic("CCCD Notification Descriptor geschrieben: Status OK=$isOk", isSuccess = isOk, isError = !isOk)
+            logDiagnostic("CCCD Notification Descriptor written: Status OK=$isOk", isSuccess = isOk, isError = !isOk)
 
             if (isOk) {
                 _connectionState.value = ConnectionState.CONNECTED
-                logDiagnostic("Starte Passwort-Handshake (yOTmK50z)...")
+                logDiagnostic("Starting auth handshake...")
 
                 scope.launch(Dispatchers.IO) {
                     delay(250)
@@ -460,7 +519,7 @@ class WheeltopManager private constructor(context: Context) {
         }
 
         override fun onCharacteristicChanged(gatt: BluetoothGatt, characteristic: BluetoothGattCharacteristic, value: ByteArray) {
-            logDiagnostic("RX Notification (API 33+): ${value.toHexString()}")
+            logDiagnostic("RX Notification: ${value.toHexString()}")
             handleRxNotification(value)
         }
 
@@ -468,7 +527,7 @@ class WheeltopManager private constructor(context: Context) {
         override fun onCharacteristicChanged(gatt: BluetoothGatt, characteristic: BluetoothGattCharacteristic) {
             @Suppress("DEPRECATION")
             val bytes = characteristic.value ?: return
-            logDiagnostic("RX Notification (Legacy): ${bytes.toHexString()}")
+            logDiagnostic("RX Notification: ${bytes.toHexString()}")
             handleRxNotification(bytes)
         }
     }
@@ -476,40 +535,32 @@ class WheeltopManager private constructor(context: Context) {
     private fun startInitializationSequence() {
         scope.launch(Dispatchers.IO) {
             delay(300)
-            logDiagnostic("Anforderung startRead (0xFA)...")
             sendAppProtocolCommand("startRead (0xFA)", 0xFA, byteArrayOf(0x80.toByte()))
 
             delay(300)
-            logDiagnostic("Anforderung Block 0 (0xFB 0x00 0x00 0x51)...")
             sendAppProtocolCommand("read block 0 (0xFB)", 0xFB, byteArrayOf(0x00, 0x00, 0x51.toByte()))
 
             delay(300)
-            logDiagnostic("Anforderung Block 1 (0xFB 0x00 0x01 0x51)...")
             sendAppProtocolCommand("read block 1 (0xFB)", 0xFB, byteArrayOf(0x00, 0x01, 0x51.toByte()))
 
             delay(300)
-            logDiagnostic("Anforderung Block 2 (0xFB 0x00 0x02 0x51)...")
             sendAppProtocolCommand("read block 2 (0xFB)", 0xFB, byteArrayOf(0x00, 0x02, 0x51.toByte()))
 
             delay(300)
-            logDiagnostic("Anforderung Block 3 (0xFB 0x00 0x03 0x51)...")
             sendAppProtocolCommand("read block 3 (0xFB)", 0xFB, byteArrayOf(0x00, 0x03, 0x51.toByte()))
 
             delay(300)
-            logDiagnostic("Anforderung Block 4 (0xFB 0x00 0x04 0x51)...")
             sendAppProtocolCommand("read block 4 (0xFB)", 0xFB, byteArrayOf(0x00, 0x04, 0x51.toByte()))
 
             delay(300)
-            logDiagnostic("Anforderung VersionInfo (0x60)...")
             sendAppProtocolCommand("getTransmissionVersionInfo (0x60)", 0x60)
 
             delay(300)
-            logDiagnostic("Anforderung BackSetting (0x67)...")
             sendAppProtocolCommand("backSetting1p (0x67)", 0x67, byteArrayOf(0x01, 0x01))
 
             delay(300)
             _isAuthenticatedState.value = true
-            logDiagnostic("INITIALISIERUNG VOLLSTÄNDIG - SCHALTUNG BEREIT!", isSuccess = true)
+            logDiagnostic("INITIALIZATION COMPLETE - READY!", isSuccess = true)
 
             startHeartbeat()
         }
@@ -522,7 +573,7 @@ class WheeltopManager private constructor(context: Context) {
             try {
                 val asciiString = String(data, 4, data.size - 4, Charsets.US_ASCII)
                 if (asciiString.contains("POWER") || asciiString.contains("H_") || asciiString.contains("Q_") || asciiString.contains("L_")) {
-                    logDiagnostic("ASCII Telemetrie empfangen: $asciiString", isSuccess = true)
+                    logDiagnostic("ASCII telemetry: $asciiString", isSuccess = true)
                     parseAsciiPowerString(asciiString)
                 }
             } catch (_: Exception) {}
@@ -547,7 +598,7 @@ class WheeltopManager private constructor(context: Context) {
             val extractedKey = ((data[1].toInt() and 0xFF) - 0x32 and 0xFF).toByte()
             sessionKeyByte = extractedKey
             _isAuthenticatedState.value = true
-            logDiagnostic("SESSION KEY AKTIVIERT: 0x%02X".format(extractedKey), isSuccess = true)
+            logDiagnostic("SESSION KEY ACTIVATED: 0x%02X".format(extractedKey), isSuccess = true)
 
             startInitializationSequence()
         }
@@ -564,13 +615,19 @@ class WheeltopManager private constructor(context: Context) {
 
                 if (key.contains("H_POWER") || key.contains("POWER_2") || key == "H_POWER") {
                     _batteryRearVolts.value = volts
-                    logDiagnostic("H_POWER (Schaltwerk): $volts V", isSuccess = true)
+                    logDiagnostic("Rear Derailleur: $volts V", isSuccess = true)
                 } else if (key.contains("Q_POWER") || key.contains("POWER_1") || key == "Q_POWER") {
                     _batteryFrontVolts.value = volts
-                    logDiagnostic("Q_POWER (Umwerfer): $volts V", isSuccess = true)
-                } else if (key.contains("L_POWER") || key.contains("R_POWER")) {
-                    _batteryShifterVolts.value = volts
-                    logDiagnostic("Shifter Power: $volts V", isSuccess = true)
+                    logDiagnostic("Front Derailleur: $volts V", isSuccess = true)
+                } else if (key.contains("R_POWER") || key.contains("SHIFTER_R")) {
+                    _batteryShifterRightVolts.value = volts
+                    logDiagnostic("Shifter Right: $volts V", isSuccess = true)
+                } else if (key.contains("L_POWER") || key.contains("SHIFTER_L")) {
+                    _batteryShifterLeftVolts.value = volts
+                    logDiagnostic("Shifter Left: $volts V", isSuccess = true)
+                } else if (key.contains("POWER")) {
+                    _batteryShifterRightVolts.value = volts
+                    _batteryShifterLeftVolts.value = volts
                 }
             }
         }
@@ -582,7 +639,7 @@ class WheeltopManager private constructor(context: Context) {
             gatt.setCharacteristicNotification(characteristic, true)
             val descriptor = characteristic.getDescriptor(CCCD_UUID)
             if (descriptor != null) {
-                logDiagnostic("Schreibe CCCD Descriptor zur Benachrichtigungs-Aktivierung...")
+                logDiagnostic("Writing CCCD descriptor...")
                 val props = characteristic.properties
                 val valueBytes = if ((props and BluetoothGattCharacteristic.PROPERTY_INDICATE) != 0) {
                     BluetoothGattDescriptor.ENABLE_INDICATION_VALUE
@@ -599,10 +656,10 @@ class WheeltopManager private constructor(context: Context) {
                     gatt.writeDescriptor(descriptor)
                 }
             } else {
-                logDiagnostic("CCCD Descriptor (2902) nicht auf RX Characteristic gefunden!", isError = true)
+                logDiagnostic("CCCD descriptor not found", isError = true)
             }
         } catch (e: Exception) {
-            logDiagnostic("Fehler beim Aktivieren von Notifications: ${e.message}", isError = true)
+            logDiagnostic("Error enabling notifications: ${e.message}", isError = true)
         }
     }
 
@@ -612,7 +669,7 @@ class WheeltopManager private constructor(context: Context) {
         val tx = txCharacteristic
 
         if (gatt == null || tx == null) {
-            logDiagnostic("Kann $actionName nicht senden: GATT/TX nicht bereit", isError = true)
+            logDiagnostic("Cannot send $actionName: GATT/TX not ready", isError = true)
             return@withLock false
         }
 
@@ -634,7 +691,7 @@ class WheeltopManager private constructor(context: Context) {
             }
 
             if (!writeInitiated) {
-                logDiagnostic("gatt.writeCharacteristic gab false zurück für $actionName", isError = true)
+                logDiagnostic("gatt.writeCharacteristic returned false for $actionName", isError = true)
                 pendingWriteDeferred = null
                 return@withLock false
             }
@@ -643,10 +700,10 @@ class WheeltopManager private constructor(context: Context) {
                 deferred.await()
             } ?: true
 
-            logDiagnostic("Sende [$actionName] (Opcode 0x52): ${bytes.toHexString()} (Status OK)", isSuccess = true)
+            logDiagnostic("Sent [$actionName]", isSuccess = true)
             return@withLock true
         } catch (e: Exception) {
-            logDiagnostic("Fehler beim Senden von $actionName: ${e.message}", isError = true)
+            logDiagnostic("Error sending $actionName: ${e.message}", isError = true)
             pendingWriteDeferred = null
             return@withLock false
         }
@@ -655,7 +712,7 @@ class WheeltopManager private constructor(context: Context) {
     private fun buildAppFrame(commandId: Int, payload: ByteArray = byteArrayOf()): ByteArray {
         val key = sessionKeyByte ?: 0x29.toByte()
         val rawXorByte = 0x32.toByte()
-        val xorKey = (rawXorByte.toInt() and 0xFF) - 0x32 // 0x00
+        val xorKey = (rawXorByte.toInt() and 0xFF) - 0x32
 
         val headerAndPayload = mutableListOf<Byte>()
         headerAndPayload.add((key.toInt() xor xorKey).toByte())

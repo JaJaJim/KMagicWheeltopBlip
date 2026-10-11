@@ -3,6 +3,7 @@ package io.github.JaJaJim.karooedscharge.data
 import android.content.Context
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
+import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
@@ -16,6 +17,7 @@ class RemotePreferences(private val context: Context) {
     companion object {
         private val BOUND_WHEELTOP_MAC_KEY = stringPreferencesKey("bound_wheeltop_mac")
         private val BOUND_WHEELTOP_NAME_KEY = stringPreferencesKey("bound_wheeltop_name")
+        private val IS_MONITORED_KEY = booleanPreferencesKey("is_monitored")
     }
 
     val boundWheeltopMac: Flow<String?> = context.dataStore.data.map { preferences ->
@@ -26,10 +28,22 @@ class RemotePreferences(private val context: Context) {
         preferences[BOUND_WHEELTOP_NAME_KEY]
     }
 
+    val isMonitored: Flow<Boolean> = context.dataStore.data.map { preferences ->
+        preferences[IS_MONITORED_KEY] ?: false
+    }
+
     suspend fun saveBoundWheeltop(mac: String, name: String) {
         context.dataStore.edit { preferences ->
             preferences[BOUND_WHEELTOP_MAC_KEY] = mac
             preferences[BOUND_WHEELTOP_NAME_KEY] = name
+            // Default isMonitored to false on fresh bind
+            preferences[IS_MONITORED_KEY] = false
+        }
+    }
+
+    suspend fun saveIsMonitored(monitored: Boolean) {
+        context.dataStore.edit { preferences ->
+            preferences[IS_MONITORED_KEY] = monitored
         }
     }
 
@@ -37,6 +51,7 @@ class RemotePreferences(private val context: Context) {
         context.dataStore.edit { preferences ->
             preferences.remove(BOUND_WHEELTOP_MAC_KEY)
             preferences.remove(BOUND_WHEELTOP_NAME_KEY)
+            preferences[IS_MONITORED_KEY] = false
         }
     }
 }
