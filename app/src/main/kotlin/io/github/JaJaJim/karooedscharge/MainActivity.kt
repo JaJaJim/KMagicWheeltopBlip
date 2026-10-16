@@ -9,7 +9,6 @@ import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -19,13 +18,11 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
@@ -53,17 +50,12 @@ class MainActivity : ComponentActivity() {
 
     private val requestPermissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
-    ) { permissions ->
-        if (permissions.values.all { it }) {
-            wheeltopManager.startScan()
-        }
-    }
+    ) { _ -> }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         wheeltopManager = WheeltopManager.getInstance(applicationContext)
 
-        // Automatically check and request Bluetooth permissions on startup
         checkPermissionsAndScan()
 
         setContent {
@@ -95,8 +87,6 @@ class MainActivity : ComponentActivity() {
 
         if (permissionsToRequest.isNotEmpty()) {
             requestPermissionLauncher.launch(permissionsToRequest.toTypedArray())
-        } else {
-            wheeltopManager.startScan()
         }
     }
 }
@@ -108,15 +98,23 @@ fun EdsChargeLightScreen(wheeltopManager: WheeltopManager) {
     val boundName by wheeltopManager.boundDeviceName.collectAsState()
     val scannedDevices by wheeltopManager.scannedDevices.collectAsState()
     val isMonitored by wheeltopManager.isMonitored.collectAsState()
-    val isReScanning by wheeltopManager.isReScanning.collectAsState()
 
-    val rearVolts by wheeltopManager.batteryRearVolts.collectAsState()
-    val frontVolts by wheeltopManager.batteryFrontVolts.collectAsState()
-    val shifterRightVolts by wheeltopManager.batteryShifterRightVolts.collectAsState()
-    val shifterLeftVolts by wheeltopManager.batteryShifterLeftVolts.collectAsState()
+    val gattRearVolts by wheeltopManager.gattRearVolts.collectAsState()
+    val gattFrontVolts by wheeltopManager.gattFrontVolts.collectAsState()
+    val gattShifterRightVolts by wheeltopManager.gattShifterRightVolts.collectAsState()
+    val gattShifterLeftVolts by wheeltopManager.gattShifterLeftVolts.collectAsState()
 
-    val isConnected = (connectionState == ConnectionState.CONNECTED)
-    val statusText = if (isConnected) "BLE connected" else "BLE disconnected"
+    val gattRearFirmware by wheeltopManager.gattRearFirmware.collectAsState()
+    val gattFrontFirmware by wheeltopManager.gattFrontFirmware.collectAsState()
+    val gattShifterRightFirmware by wheeltopManager.gattShifterRightFirmware.collectAsState()
+    val gattShifterLeftFirmware by wheeltopManager.gattShifterLeftFirmware.collectAsState()
+
+    val statusText = when {
+        !isMonitored -> "BLE Disconnected"
+        connectionState == ConnectionState.CONNECTED -> "GATT Connected"
+        connectionState == ConnectionState.CONNECTING -> "Connecting GATT..."
+        else -> "BLE Disconnected"
+    }
 
     val scrollState = rememberScrollState()
 
@@ -158,14 +156,13 @@ fun EdsChargeLightScreen(wheeltopManager: WheeltopManager) {
             }
 
             Text(
-                text = "Connected Gear",
+                text = "Master GATT Gear",
                 fontSize = 15.sp,
                 fontWeight = FontWeight.Bold,
                 color = Color(0xFF1E1B2E),
                 modifier = Modifier.padding(vertical = 6.dp)
             )
 
-            // Devices list or bound device
             val devicesToDisplay: List<BleDeviceItem> = when {
                 !boundMac.isNullOrBlank() -> listOf(
                     BleDeviceItem(
@@ -180,14 +177,18 @@ fun EdsChargeLightScreen(wheeltopManager: WheeltopManager) {
 
             if (devicesToDisplay.isNotEmpty()) {
                 devicesToDisplay.forEach { device ->
-                    GearCard(
+                    GattMasterCard(
                         deviceName = device.name,
                         statusText = statusText,
                         isMonitored = isMonitored,
-                        frontVolts = frontVolts,
-                        rearVolts = rearVolts,
-                        shifterRightVolts = shifterRightVolts,
-                        shifterLeftVolts = shifterLeftVolts,
+                        gattRearVolts = gattRearVolts,
+                        gattFrontVolts = gattFrontVolts,
+                        gattShifterRightVolts = gattShifterRightVolts,
+                        gattShifterLeftVolts = gattShifterLeftVolts,
+                        gattRearFirmware = gattRearFirmware,
+                        gattFrontFirmware = gattFrontFirmware,
+                        gattShifterRightFirmware = gattShifterRightFirmware,
+                        gattShifterLeftFirmware = gattShifterLeftFirmware,
                         onMonitoredChange = { enabled ->
                             if (boundMac.isNullOrBlank()) {
                                 wheeltopManager.bindDevice(device.address, device.name)
@@ -199,7 +200,6 @@ fun EdsChargeLightScreen(wheeltopManager: WheeltopManager) {
                     Spacer(modifier = Modifier.height(10.dp))
                 }
             } else {
-                // Empty state card
                 Card(
                     modifier = Modifier.fillMaxWidth(),
                     colors = CardDefaults.cardColors(containerColor = Color(0x3FE53935)),
@@ -220,29 +220,24 @@ fun EdsChargeLightScreen(wheeltopManager: WheeltopManager) {
                         )
                     }
                 }
-                Spacer(modifier = Modifier.height(10.dp))
             }
         }
-
-        Spacer(modifier = Modifier.height(16.dp))
-
-        // Bottom Re-Scan Control Box
-        ReScanBox(
-            isReScanning = isReScanning,
-            onReScanClick = { wheeltopManager.triggerReScan() }
-        )
     }
 }
 
 @Composable
-private fun GearCard(
+private fun GattMasterCard(
     deviceName: String,
     statusText: String,
     isMonitored: Boolean,
-    frontVolts: Float?,
-    rearVolts: Float?,
-    shifterRightVolts: Float?,
-    shifterLeftVolts: Float?,
+    gattRearVolts: Float?,
+    gattFrontVolts: Float?,
+    gattShifterRightVolts: Float?,
+    gattShifterLeftVolts: Float?,
+    gattRearFirmware: String?,
+    gattFrontFirmware: String?,
+    gattShifterRightFirmware: String?,
+    gattShifterLeftFirmware: String?,
     onMonitoredChange: (Boolean) -> Unit
 ) {
     val containerColor = if (isMonitored) Color(0x3F45DDA0) else Color(0x3FE53935)
@@ -267,14 +262,13 @@ private fun GearCard(
                 color = Color(0xFF5E546E)
             )
 
-            // Line-by-line voltage details when monitored
             if (isMonitored) {
                 Spacer(modifier = Modifier.height(10.dp))
 
-                VoltageLine(label = "Front Derailleur", volts = frontVolts)
-                VoltageLine(label = "Rear Derailleur", volts = rearVolts)
-                VoltageLine(label = "Shifter Right", volts = shifterRightVolts)
-                VoltageLine(label = "Shifter Left", volts = shifterLeftVolts)
+                VoltageLine(label = "Rear Derailleur", volts = gattRearVolts, firmware = gattRearFirmware)
+                VoltageLine(label = "Front Derailleur", volts = gattFrontVolts, firmware = gattFrontFirmware)
+                VoltageLine(label = "Shifter Right", volts = gattShifterRightVolts, firmware = gattShifterRightFirmware)
+                VoltageLine(label = "Shifter Left", volts = gattShifterLeftVolts, firmware = gattShifterLeftFirmware)
             }
 
             Spacer(modifier = Modifier.height(10.dp))
@@ -307,74 +301,42 @@ private fun GearCard(
 }
 
 @Composable
-private fun VoltageLine(label: String, volts: Float?) {
-    Row(
+private fun VoltageLine(label: String, volts: Float?, firmware: String?) {
+    Column(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(vertical = 2.dp),
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Text(
-            text = label,
-            fontSize = 13.sp,
-            color = Color(0xFF333333)
-        )
-        Text(
-            text = if (volts != null) "%.2f V".format(Locale.US, volts) else "-- V",
-            fontSize = 13.sp,
-            fontWeight = FontWeight.Bold,
-            color = when {
-                volts == null -> Color(0xFF777777)
-                volts >= 7.2f -> Color(0xFF006644)
-                volts >= 6.8f -> Color(0xFFB45309)
-                else -> Color(0xFFB91C1C)
-            }
-        )
-    }
-}
-
-@Composable
-private fun ReScanBox(
-    isReScanning: Boolean,
-    onReScanClick: () -> Unit
-) {
-    val containerColor = if (isReScanning) Color(0x3F45DDA0) else Color(0x3FE53935)
-    val borderColor = if (isReScanning) Color(0x8045DDA0) else Color(0x80D32F2F)
-
-    Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .onClickClickable(onReScanClick),
-        colors = CardDefaults.cardColors(containerColor = containerColor),
-        border = BorderStroke(1.dp, borderColor),
-        shape = RoundedCornerShape(14.dp)
+            .padding(vertical = 2.dp)
     ) {
         Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 14.dp),
+            modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
             Text(
-                text = if (isReScanning) "Searching..." else "Re-Scan",
-                fontWeight = FontWeight.Bold,
-                fontSize = 15.sp,
-                color = Color(0xFF1E1B2E)
+                text = label,
+                fontSize = 13.sp,
+                color = Color(0xFF333333)
             )
-
-            if (isReScanning) {
-                CircularProgressIndicator(
-                    modifier = Modifier.size(18.dp),
-                    color = Color(0xFF007A5E),
-                    strokeWidth = 2.dp
-                )
-            }
+            Text(
+                text = if (volts != null) "%.2f V".format(Locale.US, volts) else "-- V",
+                fontSize = 13.sp,
+                fontWeight = FontWeight.Bold,
+                color = when {
+                    volts == null -> Color(0xFF777777)
+                    volts >= 7.2f -> Color(0xFF006644)
+                    volts >= 2.7f -> Color(0xFF006644)
+                    else -> Color(0xFFB91C1C)
+                }
+            )
+        }
+        if (firmware != null) {
+            Text(
+                text = "FW: v$firmware",
+                fontSize = 10.sp,
+                fontWeight = FontWeight.Medium,
+                color = Color(0xFF5E546E),
+                modifier = Modifier.padding(start = 4.dp)
+            )
         }
     }
 }
-
-private fun Modifier.onClickClickable(onClick: () -> Unit) = this.then(
-    Modifier.clickable { onClick() }
-)

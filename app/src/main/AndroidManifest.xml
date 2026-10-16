@@ -40,6 +40,15 @@
                 android:resource="@xml/extension_info" />
         </service>
 
+        <receiver
+            android:name=".AdbTestReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="io.github.JaJaJim.karooedscharge.CONNECT" />
+                <action android:name="io.github.JaJaJim.karooedscharge.DISCONNECT" />
+            </intent-filter>
+        </receiver>
+
     </application>
 
 </manifest>

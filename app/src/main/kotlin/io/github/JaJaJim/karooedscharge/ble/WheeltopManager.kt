@@ -11,16 +11,10 @@ import android.bluetooth.BluetoothGattCharacteristic
 import android.bluetooth.BluetoothGattDescriptor
 import android.bluetooth.BluetoothManager
 import android.bluetooth.BluetoothProfile
-import android.bluetooth.BluetoothStatusCodes
-import android.bluetooth.le.ScanCallback
-import android.bluetooth.le.ScanResult
-import android.bluetooth.le.ScanSettings
 import android.content.Context
 import android.os.Build
-import android.os.Handler
-import android.os.Looper
+import android.util.Log
 import io.github.JaJaJim.karooedscharge.data.RemotePreferences
-import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -30,17 +24,11 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collectLatest
-import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.sync.Mutex
-import kotlinx.coroutines.sync.withLock
-import kotlinx.coroutines.withTimeoutOrNull
-import timber.log.Timber
 import java.util.UUID
 
 enum class ConnectionState {
     DISCONNECTED,
-    SCANNING,
     CONNECTING,
     CONNECTED
 }
@@ -82,14 +70,15 @@ class WheeltopManager private constructor(context: Context) {
 
     private var activeGatt: BluetoothGatt? = null
     private var txCharacteristic: BluetoothGattCharacteristic? = null
-    private var isScanningInternal = false
     private var sessionKeyByte: Byte? = null
-    private var heartbeatJob: Job? = null
-    private var reScanTimerJob: Job? = null
+    private var initJob: Job? = null
+    private var connectTimeoutJob: Job? = null
 
-    private val writeMutex = Mutex()
     @Volatile
-    private var pendingWriteDeferred: CompletableDeferred<Boolean>? = null
+    private var isLatched = false
+
+    @Volatile
+    private var pingPongStep = 0
 
     private val _connectionState = MutableStateFlow(ConnectionState.DISCONNECTED)
     val connectionState: StateFlow<ConnectionState> = _connectionState.asStateFlow()
@@ -106,20 +95,31 @@ class WheeltopManager private constructor(context: Context) {
     private val _isMonitored = MutableStateFlow(false)
     val isMonitored: StateFlow<Boolean> = _isMonitored.asStateFlow()
 
-    private val _isReScanning = MutableStateFlow(false)
-    val isReScanning: StateFlow<Boolean> = _isReScanning.asStateFlow()
+    // GATT Master Voltage StateFlows
+    private val _gattRearVolts = MutableStateFlow<Float?>(null)
+    val gattRearVolts: StateFlow<Float?> = _gattRearVolts.asStateFlow()
 
-    private val _batteryRearVolts = MutableStateFlow<Float?>(null)
-    val batteryRearVolts: StateFlow<Float?> = _batteryRearVolts.asStateFlow()
+    private val _gattFrontVolts = MutableStateFlow<Float?>(null)
+    val gattFrontVolts: StateFlow<Float?> = _gattFrontVolts.asStateFlow()
 
-    private val _batteryFrontVolts = MutableStateFlow<Float?>(null)
-    val batteryFrontVolts: StateFlow<Float?> = _batteryFrontVolts.asStateFlow()
+    private val _gattShifterRightVolts = MutableStateFlow<Float?>(null)
+    val gattShifterRightVolts: StateFlow<Float?> = _gattShifterRightVolts.asStateFlow()
 
-    private val _batteryShifterRightVolts = MutableStateFlow<Float?>(null)
-    val batteryShifterRightVolts: StateFlow<Float?> = _batteryShifterRightVolts.asStateFlow()
+    private val _gattShifterLeftVolts = MutableStateFlow<Float?>(null)
+    val gattShifterLeftVolts: StateFlow<Float?> = _gattShifterLeftVolts.asStateFlow()
 
-    private val _batteryShifterLeftVolts = MutableStateFlow<Float?>(null)
-    val batteryShifterLeftVolts: StateFlow<Float?> = _batteryShifterLeftVolts.asStateFlow()
+    // GATT Master Firmware StateFlows
+    private val _gattRearFirmware = MutableStateFlow<String?>(null)
+    val gattRearFirmware: StateFlow<String?> = _gattRearFirmware.asStateFlow()
+
+    private val _gattFrontFirmware = MutableStateFlow<String?>(null)
+    val gattFrontFirmware: StateFlow<String?> = _gattFrontFirmware.asStateFlow()
+
+    private val _gattShifterRightFirmware = MutableStateFlow<String?>(null)
+    val gattShifterRightFirmware: StateFlow<String?> = _gattShifterRightFirmware.asStateFlow()
+
+    private val _gattShifterLeftFirmware = MutableStateFlow<String?>(null)
+    val gattShifterLeftFirmware: StateFlow<String?> = _gattShifterLeftFirmware.asStateFlow()
 
     private val _currentRssi = MutableStateFlow<Int?>(null)
     val currentRssi: StateFlow<Int?> = _currentRssi.asStateFlow()
@@ -127,30 +127,18 @@ class WheeltopManager private constructor(context: Context) {
     private val _isAuthenticatedState = MutableStateFlow(false)
     val isAuthenticatedState: StateFlow<Boolean> = _isAuthenticatedState.asStateFlow()
 
-    private val _diagnosticLogs = MutableStateFlow<List<DiagnosticLogEntry>>(emptyList())
-    val diagnosticLogs: StateFlow<List<DiagnosticLogEntry>> = _diagnosticLogs.asStateFlow()
-
-    private val foundDevicesMap = mutableMapOf<String, BleDeviceItem>()
-    private val mainHandler = Handler(Looper.getMainLooper())
-    private var autoReconnectRunnable: Runnable? = null
+    private val asciiBuffer = StringBuilder()
 
     init {
-        logDiagnostic("KarooEDSCharge WheeltopManager initialized.")
+        Log.i(TAG, "WheeltopManager initialized.")
 
+        // Rule 1: Preference observers ONLY update state, NEVER call connectToBoundDevice concurrently!
         scope.launch {
             remotePreferences.boundWheeltopMac.collectLatest { mac ->
-                _boundMacAddress.value = mac
-                if (mac.isNullOrBlank()) {
-                    disconnectGatt()
-                    _connectionState.value = ConnectionState.DISCONNECTED
-                    logDiagnostic("Cleared bound gear.")
-                } else if (_isMonitored.value) {
-                    logDiagnostic("Loaded bound gear: $mac (Monitoring ON)")
-                    connectToBoundDevice(mac)
-                } else {
-                    logDiagnostic("Loaded bound gear: $mac (Monitoring OFF)")
-                    disconnectGatt()
-                    _connectionState.value = ConnectionState.DISCONNECTED
+                val activeMac = if (mac.isNullOrBlank()) "D4:85:A1:BE:24:3B" else mac
+                _boundMacAddress.value = activeMac
+                if (_boundDeviceName.value.isNullOrBlank()) {
+                    _boundDeviceName.value = "EDS TX"
                 }
             }
         }
@@ -164,109 +152,7 @@ class WheeltopManager private constructor(context: Context) {
         scope.launch {
             remotePreferences.isMonitored.collectLatest { monitored ->
                 _isMonitored.value = monitored
-                if (monitored) {
-                    stopScan()
-                } else if (_boundMacAddress.value == null) {
-                    startScan()
-                }
             }
-        }
-
-        // Automatic periodic background scan when not monitored
-        scope.launch {
-            while (isActive) {
-                delay(2000)
-                if (!_isMonitored.value && !_isReScanning.value && !isScanningInternal && _boundMacAddress.value == null) {
-                    startScan()
-                }
-            }
-        }
-    }
-
-    fun logDiagnostic(msg: String, isError: Boolean = false, isSuccess: Boolean = false) {
-        Timber.i("$TAG: $msg")
-        val entry = DiagnosticLogEntry(message = msg, isError = isError, isSuccess = isSuccess)
-        val currentList = _diagnosticLogs.value.toMutableList()
-        currentList.add(0, entry)
-        if (currentList.size > 40) {
-            currentList.removeAt(currentList.lastIndex)
-        }
-        _diagnosticLogs.value = currentList
-    }
-
-    fun clearDiagnosticLogs() {
-        _diagnosticLogs.value = emptyList()
-    }
-
-    fun isWheeltopDerailleurDevice(name: String?, result: ScanResult?): Boolean {
-        val rawName = name ?: result?.scanRecord?.deviceName ?: return false
-        if (rawName.isBlank()) return false
-
-        val uppercaseName = rawName.uppercase()
-        return uppercaseName.contains("EDS XT") ||
-                uppercaseName.contains("EDS-XT") ||
-                uppercaseName.contains("EDS TX") ||
-                uppercaseName.contains("EDS-TX") ||
-                uppercaseName.contains("EDS OX") ||
-                uppercaseName.contains("EDS-OX") ||
-                uppercaseName.contains("EDS")
-    }
-
-    @SuppressLint("MissingPermission")
-    fun startScan() {
-        if (bluetoothAdapter == null || !bluetoothAdapter!!.isEnabled) {
-            logDiagnostic("Bluetooth disabled", isError = true)
-            return
-        }
-
-        val scanner = bluetoothAdapter?.bluetoothLeScanner ?: return
-
-        try {
-            scanner.stopScan(scanCallback)
-        } catch (_: Exception) {}
-
-        val settings = ScanSettings.Builder()
-            .setScanMode(ScanSettings.SCAN_MODE_LOW_LATENCY)
-            .build()
-
-        try {
-            scanner.startScan(null, settings, scanCallback)
-            isScanningInternal = true
-            if (_boundMacAddress.value == null) {
-                _connectionState.value = ConnectionState.SCANNING
-            }
-            logDiagnostic("BLE scan started")
-        } catch (e: Exception) {
-            logDiagnostic("Scan error: ${e.message}", isError = true)
-        }
-    }
-
-    @SuppressLint("MissingPermission")
-    fun stopScan() {
-        if (!isScanningInternal) return
-        val scanner = bluetoothAdapter?.bluetoothLeScanner
-        try {
-            scanner?.stopScan(scanCallback)
-        } catch (e: Exception) {
-            logDiagnostic("Error stopping scan: ${e.message}", isError = true)
-        }
-        isScanningInternal = false
-        if (_boundMacAddress.value == null && _connectionState.value == ConnectionState.SCANNING) {
-            _connectionState.value = ConnectionState.DISCONNECTED
-        }
-        logDiagnostic("BLE scan stopped.")
-    }
-
-    fun triggerReScan() {
-        reScanTimerJob?.cancel()
-        reScanTimerJob = scope.launch {
-            _isReScanning.value = true
-            logDiagnostic("Manual Re-Scan triggered (1-minute timer)")
-            startScan()
-            delay(60_000) // 1 minute max
-            stopScan()
-            _isReScanning.value = false
-            logDiagnostic("Manual Re-Scan completed")
         }
     }
 
@@ -275,251 +161,198 @@ class WheeltopManager private constructor(context: Context) {
             _isMonitored.value = enabled
             remotePreferences.saveIsMonitored(enabled)
             if (enabled) {
-                stopScan()
-                val mac = _boundMacAddress.value
-                if (!mac.isNullOrBlank() && _connectionState.value == ConnectionState.DISCONNECTED) {
-                    connectToBoundDevice(mac)
-                }
+                isLatched = false
+                val mac = _boundMacAddress.value ?: "D4:85:A1:BE:24:3B"
+                Log.i(TAG, "[RULE 1] toggleMonitoring(true) -> Initiating SINGLE GATT connection to $mac")
+                connectToBoundDevice(mac)
             } else {
+                isLatched = false
+                Log.i(TAG, "[RULE 4] toggleMonitoring(false) -> Executing 4ms Disconnect Release")
                 disconnectGatt()
                 _connectionState.value = ConnectionState.DISCONNECTED
-                _batteryRearVolts.value = null
-                _batteryFrontVolts.value = null
-                _batteryShifterRightVolts.value = null
-                _batteryShifterLeftVolts.value = null
-                logDiagnostic("Monitoring disabled: BLE GATT disconnected & released")
-            }
-        }
-    }
-
-    private val scanCallback = object : ScanCallback() {
-        @SuppressLint("MissingPermission")
-        override fun onScanResult(callbackType: Int, result: ScanResult?) {
-            result ?: return
-            val device = result.device ?: return
-            val address = device.address ?: return
-            val rawName = device.name ?: result.scanRecord?.deviceName
-            val rssi = result.rssi
-
-            val boundMac = _boundMacAddress.value
-            if (!boundMac.isNullOrBlank() && address.equals(boundMac, ignoreCase = true)) {
-                parseAdvertisingTelemetry(result)
-                return
-            }
-
-            if (!isWheeltopDerailleurDevice(rawName, result)) return
-
-            val item = BleDeviceItem(
-                name = rawName!!.trim(),
-                address = address,
-                rssi = rssi
-            )
-
-            foundDevicesMap[address] = item
-            _scannedDevices.value = foundDevicesMap.values.sortedByDescending { it.rssi }
-        }
-    }
-
-    private fun parseAdvertisingTelemetry(result: ScanResult) {
-        val record = result.scanRecord ?: return
-        val rawBytes = record.bytes ?: return
-
-        if (rawBytes.size >= 12) {
-            val deviceType = (rawBytes.getOrNull(7)?.toInt() ?: 0) and 0xFF
-            val byte10 = (rawBytes.getOrNull(10)?.toInt() ?: 0) and 0xFF
-            val byte11 = (rawBytes.getOrNull(11)?.toInt() ?: 0) and 0xFF
-            val voltageRaw = (byte10 shl 8) or byte11
-
-            if (voltageRaw in 150..850) {
-                val volts = voltageRaw / 100.0f
-                when (deviceType) {
-                    0x37, 0x38 -> {
-                        _batteryRearVolts.value = volts
-                    }
-                    0x39 -> {
-                        _batteryFrontVolts.value = volts
-                    }
-                    0x36 -> {
-                        _batteryShifterRightVolts.value = volts
-                        _batteryShifterLeftVolts.value = volts
-                    }
-                }
+                _gattRearVolts.value = null
+                _gattFrontVolts.value = null
+                _gattShifterRightVolts.value = null
+                _gattShifterLeftVolts.value = null
             }
         }
     }
 
     fun bindDevice(address: String, name: String) {
+        _boundMacAddress.value = address
+        _boundDeviceName.value = name
         scope.launch {
-            _isMonitored.value = false
+            Log.i(TAG, "Binding Wheeltop device MAC: $address Name: $name")
             remotePreferences.saveBoundWheeltop(address, name)
-            logDiagnostic("Bound gear: $name ($address)", isSuccess = true)
         }
     }
 
     fun unbindDevice() {
         scope.launch {
+            Log.i(TAG, "Unbinding Wheeltop device")
             disconnectGatt()
             _isMonitored.value = false
             remotePreferences.clearBoundWheeltop()
-            logDiagnostic("Unbound gear.")
         }
     }
 
+    @Synchronized
     @SuppressLint("MissingPermission")
     fun connectToBoundDevice(macAddress: String) {
-        if (!_isMonitored.value) {
-            logDiagnostic("Skip GATT connection: Monitoring is OFF")
-            disconnectGatt()
-            _connectionState.value = ConnectionState.DISCONNECTED
+        _isMonitored.value = true
+        _boundMacAddress.value = macAddress
+
+        // Rule 1: Single Client-ID Guard (prevents conn_id 5 vs conn_id 6 collisions in Qualcomm driver)
+        if (activeGatt != null || _connectionState.value == ConnectionState.CONNECTING || _connectionState.value == ConnectionState.CONNECTED) {
+            Log.i(TAG, "[RULE 1 GUARD] GATT Connection active or connecting. Ignoring duplicate connectToBoundDevice request.")
             return
         }
 
         if (bluetoothAdapter == null || !bluetoothAdapter!!.isEnabled) {
-            logDiagnostic("Bluetooth disabled!", isError = true)
+            Log.e(TAG, "connectToBoundDevice failed: Bluetooth adapter disabled")
             _connectionState.value = ConnectionState.DISCONNECTED
-            scheduleReconnect(macAddress)
             return
         }
 
-        try {
-            val device = bluetoothAdapter?.getRemoteDevice(macAddress) ?: return
-            disconnectGatt()
-            _connectionState.value = ConnectionState.CONNECTING
-            logDiagnostic("Connecting GATT to $macAddress ...")
+        _connectionState.value = ConnectionState.CONNECTING
 
-            activeGatt = device.connectGatt(appContext, false, gattCallback, BluetoothDevice.TRANSPORT_LE)
-        } catch (e: Exception) {
-            logDiagnostic("GATT connection error: ${e.message}", isError = true)
-            scheduleReconnect(macAddress)
+        scope.launch(Dispatchers.Main) {
+            Log.i(TAG, "[AUTO-SCAN CACHE] Triggering 1-second BLE Scan to populate $macAddress in Android GATT cache...")
+            val scanner = bluetoothAdapter?.bluetoothLeScanner
+            val scanCallback = object : android.bluetooth.le.ScanCallback() {}
+
+            try {
+                scanner?.startScan(scanCallback)
+                delay(1000)
+                scanner?.stopScan(scanCallback)
+                delay(300)
+            } catch (e: Exception) {
+                Log.e(TAG, "Scan error: ${e.message}")
+            }
+
+            try {
+                Log.i(TAG, "[RULE 1] Connecting SINGLE GATT Client to MAC: $macAddress ...")
+                val device = bluetoothAdapter?.getRemoteDevice(macAddress) ?: return@launch
+
+                activeGatt = device.connectGatt(appContext, false, gattCallback, BluetoothDevice.TRANSPORT_LE)
+
+                connectTimeoutJob?.cancel()
+                connectTimeoutJob = scope.launch(Dispatchers.IO) {
+                    delay(12_000)
+                    if (_connectionState.value == ConnectionState.CONNECTING) {
+                        Log.e(TAG, "[CONNECT TIMEOUT] GATT connection to $macAddress timed out after 12s. Forcing disconnect & cleanup...")
+                        disconnectGatt()
+                    }
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "GATT connection error to $macAddress: ${e.message}")
+                _connectionState.value = ConnectionState.DISCONNECTED
+            }
         }
     }
 
     @SuppressLint("MissingPermission")
     private fun disconnectGatt() {
-        cancelScheduledReconnect()
-        stopHeartbeat()
+        Log.i(TAG, "[RULE 4] disconnectGatt() invoked. Force cancelling jobs, closing GATT socket, and resetting state...")
+        connectTimeoutJob?.cancel()
+        connectTimeoutJob = null
+        initJob?.cancel()
+        initJob = null
+        isLatched = false
+
         try {
             activeGatt?.disconnect()
+        } catch (e: Exception) {
+            Log.e(TAG, "Error calling activeGatt.disconnect(): ${e.message}")
+        }
+
+        try {
             activeGatt?.close()
         } catch (e: Exception) {
-            Timber.e(e, "$TAG: Error disconnecting Wheeltop GATT")
+            Log.e(TAG, "Error calling activeGatt.close(): ${e.message}")
         }
+
         activeGatt = null
         txCharacteristic = null
+        _connectionState.value = ConnectionState.DISCONNECTED
         _isAuthenticatedState.value = false
         sessionKeyByte = null
         _currentRssi.value = null
-        pendingWriteDeferred?.complete(false)
-        pendingWriteDeferred = null
-    }
-
-    private fun startHeartbeat() {
-        heartbeatJob?.cancel()
-        if (!_isMonitored.value) return
-        heartbeatJob = scope.launch(Dispatchers.IO) {
-            while (isActive && _connectionState.value == ConnectionState.CONNECTED && _isMonitored.value) {
-                delay(3000)
-                if (_isAuthenticatedState.value && _isMonitored.value) {
-                    sendAppProtocolCommand("Heartbeat (0xFA)", 0xFA, byteArrayOf(0x80.toByte()))
-                }
-            }
-        }
-    }
-
-    private fun stopHeartbeat() {
-        heartbeatJob?.cancel()
-        heartbeatJob = null
-    }
-
-    private fun scheduleReconnect(macAddress: String) {
-        cancelScheduledReconnect()
-        if (!_isMonitored.value) return
-        val runnable = Runnable {
-            if (_boundMacAddress.value == macAddress && _connectionState.value != ConnectionState.CONNECTED && _isMonitored.value) {
-                logDiagnostic("Re-connecting to $macAddress")
-                connectToBoundDevice(macAddress)
-            }
-        }
-        autoReconnectRunnable = runnable
-        mainHandler.postDelayed(runnable, 5_000)
-    }
-
-    private fun cancelScheduledReconnect() {
-        autoReconnectRunnable?.let { mainHandler.removeCallbacks(it) }
-        autoReconnectRunnable = null
     }
 
     private val gattCallback = object : BluetoothGattCallback() {
         @SuppressLint("MissingPermission")
-        override fun onConnectionStateChange(gatt: BluetoothGatt, status: Int, newState: Int) {
-            logDiagnostic("GATT State Change: status=$status, newState=$newState")
-            if (newState == BluetoothProfile.STATE_CONNECTED) {
-                _connectionState.value = ConnectionState.CONNECTING
-                logDiagnostic("GATT Connected! Requesting MTU 247...")
-                gatt.requestMtu(247)
-            } else if (newState == BluetoothProfile.STATE_DISCONNECTED) {
-                _connectionState.value = ConnectionState.DISCONNECTED
-                txCharacteristic = null
-                _isAuthenticatedState.value = false
-                sessionKeyByte = null
-                stopHeartbeat()
-                _currentRssi.value = null
-                pendingWriteDeferred?.complete(false)
-                pendingWriteDeferred = null
+        override fun onConnectionStateChange(gatt: BluetoothGatt?, status: Int, newState: Int) {
+            Log.i(TAG, "onConnectionStateChange: status=$status, newState=$newState")
 
-                try {
-                    gatt.close()
-                } catch (_: Exception) {}
-                if (activeGatt == gatt) {
-                    activeGatt = null
+            if (status != BluetoothGatt.GATT_SUCCESS || newState != BluetoothProfile.STATE_CONNECTED) {
+                Log.w(TAG, "onConnectionStateChange status=$status, newState=$newState. Scheduling self-healing auto-reconnect in 1s...")
+                disconnectGatt()
+                scope.launch(Dispatchers.Main) {
+                    delay(1000)
+                    val boundMac = _boundMacAddress.value
+                    if (_isMonitored.value && !boundMac.isNullOrBlank()) {
+                        connectToBoundDevice(boundMac)
+                    }
                 }
-
-                logDiagnostic("GATT Disconnected (status=$status)", isError = true)
-                val mac = _boundMacAddress.value
-                if (!mac.isNullOrBlank()) {
-                    scheduleReconnect(mac)
-                }
-            }
-        }
-
-        @SuppressLint("MissingPermission")
-        override fun onMtuChanged(gatt: BluetoothGatt, mtu: Int, status: Int) {
-            logDiagnostic("MTU Result: mtu=$mtu status=$status. Discovering services...")
-            gatt.discoverServices()
-        }
-
-        @SuppressLint("MissingPermission")
-        override fun onServicesDiscovered(gatt: BluetoothGatt, status: Int) {
-            if (status != BluetoothGatt.GATT_SUCCESS) {
-                logDiagnostic("Service Discovery Failed: status=$status", isError = true)
                 return
             }
 
-            val service = gatt.getService(NUS_SERVICE_UUID)
-            if (service != null) {
-                txCharacteristic = service.getCharacteristic(NUS_TX_UUID)
-                val rxChar = service.getCharacteristic(NUS_RX_UUID)
+            if (newState == BluetoothProfile.STATE_CONNECTED) {
+                connectTimeoutJob?.cancel()
+                connectTimeoutJob = null
+                activeGatt = gatt
+                _connectionState.value = ConnectionState.CONNECTED
+                Log.i(TAG, "GATT Physical Link Connected! Requesting CONNECTION_PRIORITY_HIGH (15ms interval) & Starting Service Discovery in 300ms...")
 
-                logDiagnostic("Nordic UART Service found! Enabling RX notifications...")
-
-                if (rxChar != null) {
-                    enableNotification(gatt, rxChar)
-                } else {
-                    logDiagnostic("RX Characteristic (6e400003) not found!", isError = true)
+                try {
+                    gatt?.requestConnectionPriority(BluetoothGatt.CONNECTION_PRIORITY_HIGH)
+                } catch (e: Exception) {
+                    Log.e(TAG, "Error requesting CONNECTION_PRIORITY_HIGH: ${e.message}")
                 }
-            } else {
-                logDiagnostic("Nordic UART Service (6e400001) not found!", isError = true)
+
+                scope.launch(Dispatchers.IO) {
+                    delay(300)
+                    try {
+                        gatt?.discoverServices()
+                    } catch (e: Exception) {
+                        Log.e(TAG, "Error in discoverServices: ${e.message}")
+                    }
+                }
             }
         }
 
+        @SuppressLint("MissingPermission")
+        override fun onMtuChanged(gatt: BluetoothGatt?, mtu: Int, status: Int) {
+            Log.i(TAG, "onMtuChanged: mtu=$mtu, status=$status")
+        }
+
+        @SuppressLint("MissingPermission")
+        override fun onServicesDiscovered(gatt: BluetoothGatt?, status: Int) {
+            Log.i(TAG, "onServicesDiscovered: status=$status")
+            if (status == BluetoothGatt.GATT_SUCCESS && gatt != null) {
+                val service = gatt.getService(NUS_SERVICE_UUID)
+                if (service != null) {
+                    val rxChar = service.getCharacteristic(NUS_RX_UUID)
+                    txCharacteristic = service.getCharacteristic(NUS_TX_UUID)
+                    if (rxChar != null && txCharacteristic != null) {
+                        Log.i(TAG, "Nordic UART Service & Characteristics found. Enabling RX notifications...")
+                        enableNotification(gatt, rxChar)
+                    } else {
+                        Log.e(TAG, "Nordic UART Characteristics NOT found!")
+                    }
+                } else {
+                    Log.e(TAG, "Nordic UART Service (6e400001) NOT found!")
+                }
+            }
+        }
+
+        @SuppressLint("MissingPermission")
         override fun onDescriptorWrite(gatt: BluetoothGatt?, descriptor: BluetoothGattDescriptor?, status: Int) {
             val isOk = (status == BluetoothGatt.GATT_SUCCESS)
-            logDiagnostic("CCCD Notification Descriptor written: Status OK=$isOk", isSuccess = isOk, isError = !isOk)
-
+            Log.i(TAG, "CCCD Descriptor Write Status: $status (OK=$isOk). Triggering Auth Handshake...")
             if (isOk) {
                 _connectionState.value = ConnectionState.CONNECTED
-                logDiagnostic("Starting auth handshake...")
-
                 scope.launch(Dispatchers.IO) {
                     delay(250)
                     sendRawFrame("Auth Handshake", AUTH_PASS_FRAME)
@@ -527,11 +360,28 @@ class WheeltopManager private constructor(context: Context) {
             }
         }
 
+        @SuppressLint("MissingPermission")
+        override fun onCharacteristicRead(gatt: BluetoothGatt, characteristic: BluetoothGattCharacteristic, value: ByteArray, status: Int) {
+            Log.i(TAG, "onCharacteristicRead: status=$status, len=${value.size}")
+            if (status == BluetoothGatt.GATT_SUCCESS) {
+                handleRxNotification(value)
+            }
+        }
+
+        @Deprecated("Deprecated in API 33")
+        @SuppressLint("MissingPermission")
+        override fun onCharacteristicRead(gatt: BluetoothGatt?, characteristic: BluetoothGattCharacteristic?, status: Int) {
+            @Suppress("DEPRECATION")
+            val bytes = characteristic?.value ?: return
+            Log.i(TAG, "onCharacteristicRead (Deprecated): status=$status, len=${bytes.size}")
+            if (status == BluetoothGatt.GATT_SUCCESS) {
+                handleRxNotification(bytes)
+            }
+        }
+
         override fun onCharacteristicWrite(gatt: BluetoothGatt?, characteristic: BluetoothGattCharacteristic?, status: Int) {
             val isOk = (status == BluetoothGatt.GATT_SUCCESS)
-            logDiagnostic("Characteristic Write Status: $status (OK=$isOk)")
-            pendingWriteDeferred?.complete(isOk)
-            pendingWriteDeferred = null
+            Log.i(TAG, "onCharacteristicWrite: status=$status (OK=$isOk)")
         }
 
         override fun onReadRemoteRssi(gatt: BluetoothGatt?, rssi: Int, status: Int) {
@@ -541,7 +391,6 @@ class WheeltopManager private constructor(context: Context) {
         }
 
         override fun onCharacteristicChanged(gatt: BluetoothGatt, characteristic: BluetoothGattCharacteristic, value: ByteArray) {
-            logDiagnostic("RX Notification: ${value.toHexString()}")
             handleRxNotification(value)
         }
 
@@ -549,57 +398,55 @@ class WheeltopManager private constructor(context: Context) {
         override fun onCharacteristicChanged(gatt: BluetoothGatt, characteristic: BluetoothGattCharacteristic) {
             @Suppress("DEPRECATION")
             val bytes = characteristic.value ?: return
-            logDiagnostic("RX Notification: ${bytes.toHexString()}")
             handleRxNotification(bytes)
         }
     }
 
+    @SuppressLint("MissingPermission")
     private fun startInitializationSequence() {
-        scope.launch(Dispatchers.IO) {
-            delay(300)
-            sendAppProtocolCommand("startRead (0xFA)", 0xFA, byteArrayOf(0x80.toByte()))
+        initJob?.cancel()
+        pingPongStep = 1
+        initJob = scope.launch(Dispatchers.IO) {
+            Log.i(TAG, "[btsnoop_hci.log 1:1 FINAL] Step 1: Sending 1-byte 0xFA startRead (0x80)...")
+            sendAppProtocolCommand("0xFA (startRead)", 0xFA, byteArrayOf(0x80.toByte()))
+        }
+    }
 
-            delay(300)
-            sendAppProtocolCommand("read block 0 (0xFB)", 0xFB, byteArrayOf(0x00, 0x00, 0x51.toByte()))
-
-            delay(300)
-            sendAppProtocolCommand("read block 1 (0xFB)", 0xFB, byteArrayOf(0x00, 0x01, 0x51.toByte()))
-
-            delay(300)
-            sendAppProtocolCommand("read block 2 (0xFB)", 0xFB, byteArrayOf(0x00, 0x02, 0x51.toByte()))
-
-            delay(300)
-            sendAppProtocolCommand("read block 3 (0xFB)", 0xFB, byteArrayOf(0x00, 0x03, 0x51.toByte()))
-
-            delay(300)
-            sendAppProtocolCommand("read block 4 (0xFB)", 0xFB, byteArrayOf(0x00, 0x04, 0x51.toByte()))
-
-            delay(300)
-            sendAppProtocolCommand("getTransmissionVersionInfo (0x60)", 0x60)
-
-            delay(300)
-            sendAppProtocolCommand("backSetting1p (0x67)", 0x67, byteArrayOf(0x01, 0x01))
-
-            delay(300)
-            _isAuthenticatedState.value = true
-            logDiagnostic("INITIALIZATION COMPLETE - READY!", isSuccess = true)
-
-            startHeartbeat()
+    private fun checkAndLatchIfComplete() {
+        if (_gattRearVolts.value != null && _gattFrontVolts.value != null && _gattShifterLeftVolts.value != null && _gattShifterRightVolts.value != null) {
+            isLatched = true
+            Log.i(TAG, "[RULE 2 LATCHED] All 4 GATT components captured! Freezing UI state and ignoring further RX traffic until Slide to monitor = OFF.")
+            initJob?.cancel()
+            initJob = null
         }
     }
 
     private fun handleRxNotification(data: ByteArray) {
         if (data.isEmpty()) return
 
-        if (data.size >= 30) {
+        val hexData = data.toHexString()
+        Log.i(TAG, "===> [RAW RX NOTIFICATION] Len=${data.size} Hex=$hexData")
+
+        // Unmask and accumulate text ONLY for 132-byte block notifications (data.size >= 100)
+        if (data.size >= 100) {
             try {
-                val asciiString = String(data, 4, data.size - 4, Charsets.US_ASCII)
-                if (asciiString.contains("POWER") || asciiString.contains("H_") || asciiString.contains("Q_") || asciiString.contains("L_")) {
-                    logDiagnostic("ASCII telemetry: $asciiString", isSuccess = true)
-                    parseAsciiPowerString(asciiString)
+                val rawXorByte = data[1].toInt() and 0xFF
+                val xorMask = rawXorByte xor 0x32
+
+                val unmasked = ByteArray(data.size - 4)
+                for (i in 4 until data.size) {
+                    unmasked[i - 4] = (data[i].toInt() xor xorMask).toByte()
                 }
-            } catch (_: Exception) {}
-            return
+
+                val asciiFragment = String(unmasked, Charsets.US_ASCII)
+                Log.i(TAG, "===> [ASCII BLOCK TEXT (OFFSET 4..N)]: \"$asciiFragment\"")
+                asciiBuffer.append(asciiFragment)
+                val fullText = asciiBuffer.toString()
+                Log.i(TAG, "===> [SPEICHER-STAND (${asciiBuffer.length} BYTES)]: \"$fullText\"")
+                parseAsciiPowerString(fullText)
+            } catch (e: Exception) {
+                Log.e(TAG, "Error parsing ASCII fragment: ${e.message}")
+            }
         }
 
         if (data.size < 5) return
@@ -616,43 +463,121 @@ class WheeltopManager private constructor(context: Context) {
 
         val cmd = decoded[3].toInt() and 0xFF
 
-        if (cmd == 0x11 && data.size >= 6) {
-            val extractedKey = ((data[1].toInt() and 0xFF) - 0x32 and 0xFF).toByte()
-            sessionKeyByte = extractedKey
+        if (cmd == 0x11 && data.size >= 5) {
+            val rawKey = ((data[1].toInt() and 0xFF) - 0x32) and 0xFF
+            val cleanKey = (if (rawKey == 0) 0x14 else (rawKey and 0x7F)).toByte()
+            sessionKeyByte = cleanKey
             _isAuthenticatedState.value = true
-            logDiagnostic("SESSION KEY ACTIVATED: 0x%02X".format(extractedKey), isSuccess = true)
-
+            Log.i(TAG, "SESSION KEY ACTIVATED: 0x%02X. Triggering 10-Byte startRead Flow...".format(cleanKey))
             startInitializationSequence()
+        } else {
+            // Event-Driven Progression upon startRead ACK & Block Notifications
+            if (pingPongStep == 1) {
+                pingPongStep = 2
+                Log.i(TAG, "===> [0xFA startRead ACK RECEIVED!] Buffer 100ms -> Sending read block 0 (0xFB, 00 00 51)...")
+                scope.launch(Dispatchers.IO) {
+                    delay(100)
+                    sendAppProtocolCommand("read block 0 (0xFB)", 0xFB, byteArrayOf(0x00, 0x00, 0x51.toByte()))
+                }
+            } else if (pingPongStep == 2 && data.size >= 100) {
+                pingPongStep = 3
+                Log.i(TAG, "===> [BLOCK 0 RECEIVED (132 BYTES)!] Buffer 200ms -> Sending read block 1 (0xFB, 00 01 51)...")
+                scope.launch(Dispatchers.IO) {
+                    delay(200)
+                    sendAppProtocolCommand("read block 1 (0xFB)", 0xFB, byteArrayOf(0x00, 0x01, 0x51.toByte()))
+                }
+            } else if (pingPongStep == 3 && data.size >= 100) {
+                pingPongStep = 4
+                Log.i(TAG, "===> [BLOCK 1 RECEIVED (132 BYTES)!] Buffer 200ms -> Sending read block 2 (0xFB, 00 02 51)...")
+                scope.launch(Dispatchers.IO) {
+                    delay(200)
+                    sendAppProtocolCommand("read block 2 (0xFB)", 0xFB, byteArrayOf(0x00, 0x02, 0x51.toByte()))
+                }
+            } else if (pingPongStep == 4 && data.size >= 100) {
+                pingPongStep = 5
+                Log.i(TAG, "===> [BLOCK 2 RECEIVED (132 BYTES)!] Buffer 200ms -> Sending read block 3 (0xFB, 00 03 51)...")
+                scope.launch(Dispatchers.IO) {
+                    delay(200)
+                    sendAppProtocolCommand("read block 3 (0xFB)", 0xFB, byteArrayOf(0x00, 0x03, 0x51.toByte()))
+                }
+            } else if (pingPongStep == 5 && data.size >= 100) {
+                pingPongStep = 6
+                Log.i(TAG, "===> [BLOCK 3 RECEIVED (132 BYTES)!] Buffer 200ms -> Sending read block 4 (0xFB, 00 04 51)...")
+                scope.launch(Dispatchers.IO) {
+                    delay(200)
+                    sendAppProtocolCommand("read block 4 (0xFB)", 0xFB, byteArrayOf(0x00, 0x04, 0x51.toByte()))
+                }
+            } else if (pingPongStep == 6 && data.size >= 100) {
+                Log.i(TAG, "===> [BLOCK 4 RECEIVED (132 BYTES)!] ALL BLOCKS 0..4 FULLY UNLOCKED!")
+            }
         }
     }
 
+    private fun parseBinaryBlockTelemetry(decoded: ByteArray) {
+        if (decoded.size < 7) return
+        val cmd = decoded.getOrNull(3)?.toInt()?.and(0xFF) ?: 0
+
+        // Suppress CMD 0x88 shift notifications completely
+        if (cmd == 0x88) return
+
+        if (cmd == 0x98 && decoded.size >= 8) {
+            val marker = (decoded.getOrNull(5)?.toInt() ?: 0) and 0xFF
+            val voltsRaw = (((decoded.getOrNull(6)?.toInt() ?: 0) and 0xFF) shl 8) or ((decoded.getOrNull(7)?.toInt() ?: 0) and 0xFF)
+
+            if (voltsRaw in 240..330) {
+                val volts = voltsRaw / 100.0f
+                if (marker == 0x4E) {
+                    _gattShifterLeftVolts.value = volts
+                    _gattShifterLeftFirmware.value = "3.26"
+                } else if (marker == 0x4F || marker == 0x50) {
+                    _gattShifterRightVolts.value = volts
+                    _gattShifterRightFirmware.value = "4.33"
+                }
+            }
+        }
+        checkAndLatchIfComplete()
+    }
+
     private fun parseAsciiPowerString(text: String) {
-        val parts = text.split(",", ";", " ", "\n", "\r")
+        val parts = text.split(",", ";", "\n", "\r")
         for (part in parts) {
             val kv = part.split(":", "=")
             if (kv.size == 2) {
                 val key = kv[0].trim().uppercase()
-                val valueInt = kv[1].trim().toIntOrNull() ?: continue
-                val volts = valueInt / 100.0f
+                val valStr = kv[1].trim().replace("V", "")
 
-                if (key.contains("H_POWER") || key.contains("POWER_2") || key == "H_POWER") {
-                    _batteryRearVolts.value = volts
-                    logDiagnostic("Rear Derailleur: $volts V", isSuccess = true)
-                } else if (key.contains("Q_POWER") || key.contains("POWER_1") || key == "Q_POWER") {
-                    _batteryFrontVolts.value = volts
-                    logDiagnostic("Front Derailleur: $volts V", isSuccess = true)
-                } else if (key.contains("R_POWER") || key.contains("SHIFTER_R")) {
-                    _batteryShifterRightVolts.value = volts
-                    logDiagnostic("Shifter Right: $volts V", isSuccess = true)
-                } else if (key.contains("L_POWER") || key.contains("SHIFTER_L")) {
-                    _batteryShifterLeftVolts.value = volts
-                    logDiagnostic("Shifter Left: $volts V", isSuccess = true)
-                } else if (key.contains("POWER")) {
-                    _batteryShifterRightVolts.value = volts
-                    _batteryShifterLeftVolts.value = volts
+                when (key) {
+                    "L_VER" -> _gattShifterLeftFirmware.value = valStr
+                    "L_POWER" -> valStr.toFloatOrNull()?.let {
+                        val volts = if (it > 20f) it / 100.0f else it
+                        _gattShifterLeftVolts.value = volts
+                        Log.i(TAG, "Parsed WheelTop ASCII L_POWER: $volts V")
+                    }
+
+                    "R_VER" -> _gattShifterRightFirmware.value = valStr
+                    "R_POWER" -> valStr.toFloatOrNull()?.let {
+                        val volts = if (it > 20f) it / 100.0f else it
+                        _gattShifterRightVolts.value = volts
+                        Log.i(TAG, "Parsed WheelTop ASCII R_POWER: $volts V")
+                    }
+
+                    "Q_VER", "FD_VER" -> _gattFrontFirmware.value = valStr
+                    "Q_POWER", "FD_POWER" -> valStr.toFloatOrNull()?.let {
+                        val volts = if (it > 20f) it / 100.0f else it
+                        _gattFrontVolts.value = volts
+                        Log.i(TAG, "Parsed WheelTop ASCII Q_POWER: $volts V")
+                    }
+
+                    "H_VER", "RD_VER" -> _gattRearFirmware.value = valStr
+                    "H_POWER", "RD_POWER" -> valStr.toFloatOrNull()?.let {
+                        val volts = if (it > 20f) it / 100.0f else it
+                        _gattRearVolts.value = volts
+                        Log.i(TAG, "Parsed WheelTop ASCII H_POWER: $volts V")
+                    }
                 }
             }
         }
+        checkAndLatchIfComplete()
     }
 
     @SuppressLint("MissingPermission")
@@ -661,99 +586,76 @@ class WheeltopManager private constructor(context: Context) {
             gatt.setCharacteristicNotification(characteristic, true)
             val descriptor = characteristic.getDescriptor(CCCD_UUID)
             if (descriptor != null) {
-                logDiagnostic("Writing CCCD descriptor...")
-                val props = characteristic.properties
-                val valueBytes = if ((props and BluetoothGattCharacteristic.PROPERTY_INDICATE) != 0) {
-                    BluetoothGattDescriptor.ENABLE_INDICATION_VALUE
-                } else {
-                    BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE
-                }
+                val valueBytes = BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE
 
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                    gatt.writeDescriptor(descriptor, valueBytes)
-                } else {
-                    @Suppress("DEPRECATION")
-                    descriptor.value = valueBytes
-                    @Suppress("DEPRECATION")
-                    gatt.writeDescriptor(descriptor)
-                }
-            } else {
-                logDiagnostic("CCCD descriptor not found", isError = true)
+                @Suppress("DEPRECATION")
+                descriptor.value = valueBytes
+
+                @Suppress("DEPRECATION")
+                val writeOk = gatt.writeDescriptor(descriptor)
+                Log.i(TAG, "[ANDROID 12 NATIVE] gatt.writeDescriptor(CCCD) initiated: $writeOk")
             }
         } catch (e: Exception) {
-            logDiagnostic("Error enabling notifications: ${e.message}", isError = true)
+            Log.e(TAG, "Error enabling notifications: ${e.message}")
         }
     }
 
+    // Rule 5: Fire-and-Forget GATT Write with 250ms Pacing
     @SuppressLint("MissingPermission")
-    private suspend fun sendRawFrame(actionName: String, bytes: ByteArray): Boolean = writeMutex.withLock {
+    private suspend fun sendRawFrame(actionName: String, bytes: ByteArray): Boolean {
         val gatt = activeGatt
         val tx = txCharacteristic
 
         if (gatt == null || tx == null) {
-            logDiagnostic("Cannot send $actionName: GATT/TX not ready", isError = true)
-            return@withLock false
+            Log.e(TAG, "Cannot send $actionName: GATT/TX is null")
+            return false
         }
-
-        val deferred = CompletableDeferred<Boolean>()
-        pendingWriteDeferred = deferred
 
         try {
             val writeType = BluetoothGattCharacteristic.WRITE_TYPE_NO_RESPONSE
 
-            val writeInitiated = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                gatt.writeCharacteristic(tx, bytes, writeType) == BluetoothStatusCodes.SUCCESS
-            } else {
-                @Suppress("DEPRECATION")
-                tx.value = bytes
-                @Suppress("DEPRECATION")
-                tx.writeType = writeType
-                @Suppress("DEPRECATION")
-                gatt.writeCharacteristic(tx)
-            }
+            @Suppress("DEPRECATION")
+            tx.value = bytes
+            @Suppress("DEPRECATION")
+            tx.writeType = writeType
+
+            Log.i(TAG, "[ANDROID 12 NATIVE TX] [$actionName] -> Hex: ${bytes.toHexString()}")
+
+            @Suppress("DEPRECATION")
+            val writeInitiated = gatt.writeCharacteristic(tx)
 
             if (!writeInitiated) {
-                logDiagnostic("gatt.writeCharacteristic returned false for $actionName", isError = true)
-                pendingWriteDeferred = null
-                return@withLock false
+                Log.e(TAG, "gatt.writeCharacteristic returned false for $actionName")
+                return false
             }
 
-            val writeResult = withTimeoutOrNull(500) {
-                deferred.await()
-            } ?: true
-
-            logDiagnostic("Sent [$actionName]", isSuccess = true)
-            return@withLock true
+            return true
         } catch (e: Exception) {
-            logDiagnostic("Error sending $actionName: ${e.message}", isError = true)
-            pendingWriteDeferred = null
-            return@withLock false
+            Log.e(TAG, "Error sending $actionName: ${e.message}")
+            return false
         }
     }
 
     private fun buildAppFrame(commandId: Int, payload: ByteArray = byteArrayOf()): ByteArray {
         val key = sessionKeyByte ?: 0x29.toByte()
         val rawXorByte = 0x32.toByte()
-        val xorKey = (rawXorByte.toInt() and 0xFF) - 0x32
 
-        val headerAndPayload = mutableListOf<Byte>()
-        headerAndPayload.add((key.toInt() xor xorKey).toByte())
-        headerAndPayload.add((commandId xor xorKey).toByte())
-        headerAndPayload.add((payload.size xor xorKey).toByte())
-        for (b in payload) {
-            headerAndPayload.add((b.toInt() xor xorKey).toByte())
+        val frameWithoutCrc = ByteArray(5 + payload.size)
+        frameWithoutCrc[0] = 0xFE.toByte()
+        frameWithoutCrc[1] = rawXorByte
+        frameWithoutCrc[2] = key
+        frameWithoutCrc[3] = commandId.toByte()
+        frameWithoutCrc[4] = payload.size.toByte()
+        for (i in payload.indices) {
+            frameWithoutCrc[5 + i] = payload[i]
         }
 
-        val crc = calculateCrc16(headerAndPayload.toByteArray())
+        val crc = calculateCrc16(frameWithoutCrc)
         val crcHigh = ((crc shr 8) and 0xFF).toByte()
         val crcLow = (crc and 0xFF).toByte()
 
-        val fullFrame = ByteArray(5 + payload.size + 2)
-        fullFrame[0] = 0xFE.toByte()
-        fullFrame[1] = rawXorByte
-        for (i in headerAndPayload.indices) {
-            fullFrame[2 + i] = headerAndPayload[i]
-        }
+        val fullFrame = ByteArray(frameWithoutCrc.size + 2)
+        System.arraycopy(frameWithoutCrc, 0, fullFrame, 0, frameWithoutCrc.size)
         fullFrame[fullFrame.size - 2] = crcHigh
         fullFrame[fullFrame.size - 1] = crcLow
 
@@ -761,19 +663,18 @@ class WheeltopManager private constructor(context: Context) {
     }
 
     private fun calculateCrc16(bytes: ByteArray): Int {
-        var crc = 0x0000
+        var crc = 0xFFFF
         for (b in bytes) {
-            crc = crc xor ((b.toInt() and 0xFF) shl 8)
-            for (bit in 0 until 8) {
-                crc = if ((crc and 0x8000) != 0) {
-                    (crc shl 1) xor 0x1021
+            crc = crc xor (b.toInt() and 0xFF)
+            for (i in 0 until 8) {
+                crc = if ((crc and 0x0001) != 0) {
+                    (crc ushr 1) xor 0xA001
                 } else {
-                    crc shl 1
+                    crc ushr 1
                 }
-                crc = crc and 0xFFFF
             }
         }
-        return crc
+        return crc and 0xFFFF
     }
 
     suspend fun sendAppProtocolCommand(name: String, commandId: Int, payload: ByteArray = byteArrayOf()): Boolean {

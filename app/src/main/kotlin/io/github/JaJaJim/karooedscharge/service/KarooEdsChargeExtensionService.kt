@@ -42,7 +42,8 @@ class KarooEdsChargeExtensionService : KarooExtension("karoo-eds-charge", "0.0.1
 
         override fun startStream(emitter: Emitter<StreamState>) {
             val job = serviceScope.launch {
-                val flow = if (isRear) wheeltopManager.batteryRearVolts else wheeltopManager.batteryFrontVolts
+                val flow = if (isRear) wheeltopManager.gattRearVolts else wheeltopManager.gattFrontVolts
+
                 flow.collectLatest { volts ->
                     if (volts != null) {
                         emitter.onNext(
