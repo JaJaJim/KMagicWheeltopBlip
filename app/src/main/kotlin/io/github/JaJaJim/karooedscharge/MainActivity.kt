@@ -173,7 +173,7 @@ fun EdsChargeLightScreen(wheeltopManager: WheeltopManager, remoteManager: Magics
                         color = Color(0xFF1E1B2E)
                     )
                     Text(
-                        text = "Ham 🐵🚀 Release (Magicshine M0-C0 MJ_6558)",
+                        text = "Ham 🐵🚀 Release",
                         fontSize = 12.sp,
                         color = Color(0xFF5E546E)
                     )
@@ -185,14 +185,6 @@ fun EdsChargeLightScreen(wheeltopManager: WheeltopManager, remoteManager: Magics
                     modifier = Modifier.size(42.dp)
                 )
             }
-
-            Text(
-                text = "WheelTop EDS Derailleur ($modelName)",
-                fontSize = 15.sp,
-                fontWeight = FontWeight.Bold,
-                color = Color(0xFF1E1B2E),
-                modifier = Modifier.padding(vertical = 6.dp)
-            )
 
             GattMasterCard(
                 deviceName = modelName,
