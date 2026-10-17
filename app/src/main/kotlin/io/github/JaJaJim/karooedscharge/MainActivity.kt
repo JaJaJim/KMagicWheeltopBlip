@@ -9,6 +9,7 @@ import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -118,6 +119,10 @@ fun EdsChargeLightScreen(wheeltopManager: WheeltopManager, remoteManager: Magics
     val gattShifterRightFirmware by wheeltopManager.gattShifterRightFirmware.collectAsState()
     val gattShifterLeftFirmware by wheeltopManager.gattShifterLeftFirmware.collectAsState()
 
+    val blockParameters by wheeltopManager.blockParameters.collectAsState()
+    val rawBlockText by wheeltopManager.rawBlockText.collectAsState()
+    val blockStatusText by wheeltopManager.blockStatusText.collectAsState()
+
     val statusText = when {
         !isMonitored -> "BLE Disconnected"
         connectionState == ConnectionState.CONNECTED -> "GATT Connected"
@@ -203,6 +208,9 @@ fun EdsChargeLightScreen(wheeltopManager: WheeltopManager, remoteManager: Magics
                 gattFrontFirmware = gattFrontFirmware,
                 gattShifterRightFirmware = gattShifterRightFirmware,
                 gattShifterLeftFirmware = gattShifterLeftFirmware,
+                blockParameters = blockParameters,
+                rawBlockText = rawBlockText,
+                blockStatusText = blockStatusText,
                 onMonitoredChange = { enabled ->
                     val mac = if (boundMac.isNullOrBlank()) "D4:85:A1:BE:24:3B" else boundMac!!
                     if (boundMac.isNullOrBlank()) {
@@ -363,6 +371,9 @@ private fun GattMasterCard(
     gattFrontFirmware: String?,
     gattShifterRightFirmware: String?,
     gattShifterLeftFirmware: String?,
+    blockParameters: Map<String, String>,
+    rawBlockText: String,
+    blockStatusText: String?,
     onMonitoredChange: (Boolean) -> Unit
 ) {
     val containerColor = if (isMonitored) Color(0x3F45DDA0) else Color(0x3FE53935)
@@ -405,6 +416,90 @@ private fun GattMasterCard(
                     // EDS TX and GX have 2 Shifters
                     VoltageLine(label = "Shifter Right", volts = gattShifterRightVolts, firmware = gattShifterRightFirmware)
                     VoltageLine(label = "Shifter Left", volts = gattShifterLeftVolts, firmware = gattShifterLeftFirmware)
+                }
+
+                // --- BLOCK 0..4 TELEMETRY & PARAMETERS ---
+                Spacer(modifier = Modifier.height(10.dp))
+
+                Surface(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(1.dp),
+                    color = Color(0x301E1B2E)
+                ) {}
+
+                Spacer(modifier = Modifier.height(8.dp))
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "Block 0..4 Telemetry",
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 13.sp,
+                        color = Color(0xFF1E1B2E)
+                    )
+
+                    if (!blockStatusText.isNullOrBlank()) {
+                        Text(
+                            text = blockStatusText,
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Medium,
+                            color = Color(0xFF006644)
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(6.dp))
+
+                if (blockParameters.isNotEmpty()) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(Color(0x1A000000), shape = RoundedCornerShape(8.dp))
+                            .padding(8.dp)
+                    ) {
+                        blockParameters.forEach { (key, value) ->
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(vertical = 2.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Text(
+                                    text = key,
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = Color(0xFF332F4C)
+                                )
+                                Text(
+                                    text = value,
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = Color(0xFF1E1B2E)
+                                )
+                            }
+                        }
+                    }
+                } else {
+                    Text(
+                        text = "Waiting for Block 0..4 response...",
+                        fontSize = 11.sp,
+                        color = Color(0xFF777777)
+                    )
+                }
+
+                if (rawBlockText.isNotBlank()) {
+                    Spacer(modifier = Modifier.height(6.dp))
+                    Text(
+                        text = "Raw ASCII: \"$rawBlockText\"",
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Normal,
+                        color = Color(0xFF555555),
+                        maxLines = 3
+                    )
                 }
             }
 

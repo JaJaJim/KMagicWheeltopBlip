@@ -131,6 +131,16 @@ class WheeltopManager private constructor(context: Context) {
     private val _isAuthenticatedState = MutableStateFlow(false)
     val isAuthenticatedState: StateFlow<Boolean> = _isAuthenticatedState.asStateFlow()
 
+    // Block 0..4 Telemetry StateFlows
+    private val _blockParameters = MutableStateFlow<Map<String, String>>(emptyMap())
+    val blockParameters: StateFlow<Map<String, String>> = _blockParameters.asStateFlow()
+
+    private val _rawBlockText = MutableStateFlow<String>("")
+    val rawBlockText: StateFlow<String> = _rawBlockText.asStateFlow()
+
+    private val _blockStatusText = MutableStateFlow<String?>("Block 0..4 Locked")
+    val blockStatusText: StateFlow<String?> = _blockStatusText.asStateFlow()
+
     private val asciiBuffer = StringBuilder()
 
     init {
@@ -304,6 +314,11 @@ class WheeltopManager private constructor(context: Context) {
         _isAuthenticatedState.value = false
         sessionKeyByte = null
         _currentRssi.value = null
+
+        asciiBuffer.clear()
+        _blockParameters.value = emptyMap()
+        _rawBlockText.value = ""
+        _blockStatusText.value = "Block 0..4 Locked"
     }
 
     private val gattCallback = object : BluetoothGattCallback() {
@@ -432,12 +447,14 @@ class WheeltopManager private constructor(context: Context) {
     private fun startInitializationSequence() {
         initJob?.cancel()
         pingPongStep = 1
+        _blockStatusText.value = "Authenticating..."
         initJob = scope.launch(Dispatchers.IO) {
             Log.i(TAG, "[FIREWORK FLOW] Step 1: Sending 1-byte 0xFA Pipe Opener (0x80)...")
             sendAppProtocolCommand("0xFA (Pipe Opener)", 0xFA, byteArrayOf(0x80.toByte()))
             delay(250)
 
             pingPongStep = 2
+            _blockStatusText.value = "Reading Block 0 (0/5)..."
             Log.i(TAG, "[FIREWORK FLOW] Step 2: Sending read block 0 (0xFB, 00 00 51)...")
             sendAppProtocolCommand("read block 0 (0xFB)", 0xFB, byteArrayOf(0x00, 0x00, 0x51.toByte()))
         }
@@ -452,10 +469,12 @@ class WheeltopManager private constructor(context: Context) {
         // Read plain US-ASCII text fragment directly for 132-byte block notifications (data.size >= 100)
         if (data.size >= 100) {
             try {
-                val asciiFragment = String(data, 4, data.size - 4, Charsets.US_ASCII)
-                Log.i(TAG, "===> [ASCII PLAIN TEXT (OFFSET 4..N)]: \"$asciiFragment\"")
-                asciiBuffer.append(asciiFragment)
+                val rawAscii = String(data, 4, data.size - 4, Charsets.US_ASCII)
+                val cleanFragment = rawAscii.filter { it.code in 32..126 || it == '\n' || it == '\r' || it == ',' || it == ';' }
+                Log.i(TAG, "===> [ASCII PLAIN TEXT (OFFSET 4..N)]: \"$cleanFragment\"")
+                asciiBuffer.append(cleanFragment)
                 val fullText = asciiBuffer.toString()
+                _rawBlockText.value = fullText
                 Log.i(TAG, "===> [SPEICHER-STAND (${asciiBuffer.length} BYTES)]: \"$fullText\"")
                 parseAsciiPowerString(fullText)
             } catch (e: Exception) {
@@ -482,11 +501,16 @@ class WheeltopManager private constructor(context: Context) {
             val cleanKey = (if (rawKey == 0) 0x14 else (rawKey and 0x7F)).toByte()
             sessionKeyByte = cleanKey
             _isAuthenticatedState.value = true
+            _blockStatusText.value = "Session Active (Key 0x%02X)".format(cleanKey)
+            val currentMap = _blockParameters.value.toMutableMap()
+            currentMap["SESSION_KEY"] = "0x%02X".format(cleanKey)
+            _blockParameters.value = currentMap
             Log.i(TAG, "VALID SESSION KEY ACTIVATED: 0x%02X. Triggering FIREWORK Flow...".format(cleanKey))
             startInitializationSequence()
         } else if (data.size >= 100) {
             if (pingPongStep == 2) {
                 pingPongStep = 3
+                _blockStatusText.value = "Block 0 Received (1/5)..."
                 Log.i(TAG, "===> [BLOCK 0 RECEIVED (132 BYTES)!] Buffer 200ms -> Sending read block 1 (0xFB, 00 01 51)...")
                 scope.launch(Dispatchers.IO) {
                     delay(200)
@@ -494,6 +518,7 @@ class WheeltopManager private constructor(context: Context) {
                 }
             } else if (pingPongStep == 3) {
                 pingPongStep = 4
+                _blockStatusText.value = "Block 1 Received (2/5)..."
                 Log.i(TAG, "===> [BLOCK 1 RECEIVED (132 BYTES)!] Buffer 200ms -> Sending read block 2 (0xFB, 00 02 51)...")
                 scope.launch(Dispatchers.IO) {
                     delay(200)
@@ -501,6 +526,7 @@ class WheeltopManager private constructor(context: Context) {
                 }
             } else if (pingPongStep == 4) {
                 pingPongStep = 5
+                _blockStatusText.value = "Block 2 Received (3/5)..."
                 Log.i(TAG, "===> [BLOCK 2 RECEIVED (132 BYTES)!] Buffer 200ms -> Sending read block 3 (0xFB, 00 03 51)...")
                 scope.launch(Dispatchers.IO) {
                     delay(200)
@@ -508,12 +534,14 @@ class WheeltopManager private constructor(context: Context) {
                 }
             } else if (pingPongStep == 5) {
                 pingPongStep = 6
+                _blockStatusText.value = "Block 3 Received (4/5)..."
                 Log.i(TAG, "===> [BLOCK 3 RECEIVED (132 BYTES)!] Buffer 200ms -> Sending read block 4 (0xFB, 00 04 51)...")
                 scope.launch(Dispatchers.IO) {
                     delay(200)
                     sendAppProtocolCommand("read block 4 (0xFB)", 0xFB, byteArrayOf(0x00, 0x04, 0x51.toByte()))
                 }
             } else if (pingPongStep == 6) {
+                _blockStatusText.value = "Blocks 0..4 Unlocked (5/5 Complete)"
                 Log.i(TAG, "===> [BLOCK 4 RECEIVED (132 BYTES)!] ALL BLOCKS 0..4 FULLY UNLOCKED!")
             }
         }
@@ -542,6 +570,9 @@ class WheeltopManager private constructor(context: Context) {
                 val ringName = if (gearPos == 2) "Big Chainring" else "Small Chainring"
                 Log.i(TAG, "===> [FD SHIFT COMPLETE] Front Derailleur Shifted to $ringName (Position $gearPos)")
                 isShiftInProgress = false
+                val currentMap = _blockParameters.value.toMutableMap()
+                currentMap["FD_POSITION"] = "$ringName (Pos $gearPos)"
+                _blockParameters.value = currentMap
             }
             return
         }
@@ -556,6 +587,9 @@ class WheeltopManager private constructor(context: Context) {
             } else if (gearPos in 1..14) {
                 Log.i(TAG, "===> [RD SHIFT COMPLETE] Rear Derailleur Shifted to Gear $gearPos")
                 isShiftInProgress = false
+                val currentMap = _blockParameters.value.toMutableMap()
+                currentMap["RD_GEAR"] = "Gear $gearPos"
+                _blockParameters.value = currentMap
             } else if (decoded.size >= 8) {
                 // Parse battery telemetry if present in 0x98 frame
                 val voltsRaw = (((decoded.getOrNull(6)?.toInt() ?: 0) and 0xFF) shl 8) or ((decoded.getOrNull(7)?.toInt() ?: 0) and 0xFF)
@@ -575,42 +609,54 @@ class WheeltopManager private constructor(context: Context) {
 
     private fun parseAsciiPowerString(text: String) {
         val parts = text.split(",", ";", "\n", "\r")
+        val parsedMap = mutableMapOf<String, String>()
         for (part in parts) {
             val kv = part.split(":", "=")
             if (kv.size == 2) {
                 val key = kv[0].trim().uppercase()
-                val valStr = kv[1].trim().replace("V", "")
+                val valStr = kv[1].trim()
+
+                if (key.isNotEmpty() && valStr.isNotEmpty()) {
+                    parsedMap[key] = valStr
+                }
+
+                val cleanValStr = valStr.replace("V", "").trim()
 
                 when (key) {
-                    "L_VER" -> _gattShifterLeftFirmware.value = valStr
-                    "L_POWER" -> valStr.toFloatOrNull()?.let {
+                    "L_VER" -> _gattShifterLeftFirmware.value = cleanValStr
+                    "L_POWER" -> cleanValStr.toFloatOrNull()?.let {
                         val volts = if (it > 20f) it / 100.0f else it
                         _gattShifterLeftVolts.value = volts
                         Log.i(TAG, "Parsed WheelTop ASCII L_POWER: $volts V")
                     }
 
-                    "R_VER" -> _gattShifterRightFirmware.value = valStr
-                    "R_POWER" -> valStr.toFloatOrNull()?.let {
+                    "R_VER" -> _gattShifterRightFirmware.value = cleanValStr
+                    "R_POWER" -> cleanValStr.toFloatOrNull()?.let {
                         val volts = if (it > 20f) it / 100.0f else it
                         _gattShifterRightVolts.value = volts
                         Log.i(TAG, "Parsed WheelTop ASCII R_POWER: $volts V")
                     }
 
-                    "Q_VER", "FD_VER" -> _gattFrontFirmware.value = valStr
-                    "Q_POWER", "FD_POWER" -> valStr.toFloatOrNull()?.let {
+                    "Q_VER", "FD_VER" -> _gattFrontFirmware.value = cleanValStr
+                    "Q_POWER", "FD_POWER" -> cleanValStr.toFloatOrNull()?.let {
                         val volts = if (it > 20f) it / 100.0f else it
                         _gattFrontVolts.value = volts
                         Log.i(TAG, "Parsed WheelTop ASCII Q_POWER: $volts V")
                     }
 
-                    "H_VER", "RD_VER" -> _gattRearFirmware.value = valStr
-                    "H_POWER", "RD_POWER" -> valStr.toFloatOrNull()?.let {
+                    "H_VER", "RD_VER" -> _gattRearFirmware.value = cleanValStr
+                    "H_POWER", "RD_POWER" -> cleanValStr.toFloatOrNull()?.let {
                         val volts = if (it > 20f) it / 100.0f else it
                         _gattRearVolts.value = volts
                         Log.i(TAG, "Parsed WheelTop ASCII H_POWER: $volts V")
                     }
                 }
             }
+        }
+        if (parsedMap.isNotEmpty()) {
+            val currentMap = _blockParameters.value.toMutableMap()
+            currentMap.putAll(parsedMap)
+            _blockParameters.value = currentMap
         }
     }
 
