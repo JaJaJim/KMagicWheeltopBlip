@@ -10,6 +10,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -110,6 +111,7 @@ fun EdsChargeLightScreen(wheeltopManager: WheeltopManager, remoteManager: Magics
     val boundRemoteName by remoteManager.boundRemoteName.collectAsState()
     val scannedRemotes by remoteManager.scannedRemotes.collectAsState()
     val lastClickText by remoteManager.lastClickText.collectAsState()
+    val doubleClickMode by remoteManager.doubleClickMode.collectAsState()
 
     val gattRearVolts by wheeltopManager.gattRearVolts.collectAsState()
     val gattFrontVolts by wheeltopManager.gattFrontVolts.collectAsState()
@@ -256,6 +258,10 @@ fun EdsChargeLightScreen(wheeltopManager: WheeltopManager, remoteManager: Magics
                     statusText = if (isThisRemoteBound) remoteStatusText else "Scanning for Remote...",
                     isBound = isThisRemoteBound,
                     lastClickText = if (isThisRemoteBound) lastClickText else null,
+                    doubleClickMode = doubleClickMode,
+                    onDoubleClickModeChange = { mode ->
+                        remoteManager.setDoubleClickMode(mode)
+                    },
                     onBindChange = { enabled ->
                         if (enabled) {
                             remoteManager.bindRemote(remoteItem.address, remoteItem.name)
@@ -277,6 +283,8 @@ private fun RemoteCard(
     statusText: String,
     isBound: Boolean,
     lastClickText: String?,
+    doubleClickMode: String,
+    onDoubleClickModeChange: (String) -> Unit,
     onBindChange: (Boolean) -> Unit
 ) {
     val containerColor = if (isBound) Color(0x3F45DDA0) else Color(0x3FE53935)
@@ -319,15 +327,43 @@ private fun RemoteCard(
                 )
             }
 
-            Spacer(modifier = Modifier.height(8.dp))
+            Spacer(modifier = Modifier.height(10.dp))
 
             Text(
-                text = "• Square Button [□]: RD Shift Up (1 click)\n• Circle Button [○]: RD Shift Down (1 click)\n• Double Click [□/○]: FD Chainring Toggle",
-                fontSize = 11.sp,
-                color = Color(0xFF333333)
+                text = "Doppelklick Modus:",
+                fontSize = 13.sp,
+                fontWeight = FontWeight.Bold,
+                color = Color(0xFF1E1B2E)
             )
 
-            Spacer(modifier = Modifier.height(10.dp))
+            Spacer(modifier = Modifier.height(6.dp))
+
+            DoubleClickOptionRow(
+                title = "1. Umwerfer Schalten (FD Toggle)",
+                description = "Doppelklick schaltet Umwerfer (Groß / Klein)",
+                isSelected = doubleClickMode == "FD_TOGGLE",
+                onSelect = { onDoubleClickModeChange("FD_TOGGLE") }
+            )
+
+            Spacer(modifier = Modifier.height(4.dp))
+
+            DoubleClickOptionRow(
+                title = "2. Doppelklick Deaktivieren",
+                description = "Keine Doppelklick Funktion (Schutz vor Umwerfer)",
+                isSelected = doubleClickMode == "DISABLED",
+                onSelect = { onDoubleClickModeChange("DISABLED") }
+            )
+
+            Spacer(modifier = Modifier.height(4.dp))
+
+            DoubleClickOptionRow(
+                title = "3. 2 Gänge Schalten (250ms Burst)",
+                description = "□ 2x Up (+2 Gänge) / ○ 2x Down (-2 Gänge)",
+                isSelected = doubleClickMode == "BURST_SHIFT",
+                onSelect = { onDoubleClickModeChange("BURST_SHIFT") }
+            )
+
+            Spacer(modifier = Modifier.height(12.dp))
 
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -352,6 +388,61 @@ private fun RemoteCard(
                     )
                 )
             }
+        }
+    }
+}
+
+@Composable
+private fun DoubleClickOptionRow(
+    title: String,
+    description: String,
+    isSelected: Boolean,
+    onSelect: () -> Unit
+) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable { onSelect() },
+        colors = CardDefaults.cardColors(
+            containerColor = if (isSelected) Color(0x33007A5E) else Color(0x1A000000)
+        ),
+        border = BorderStroke(
+            width = 1.dp,
+            color = if (isSelected) Color(0xFF007A5E) else Color(0x20000000)
+        ),
+        shape = RoundedCornerShape(8.dp)
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 10.dp, vertical = 8.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = title,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = Color(0xFF1E1B2E)
+                )
+                Text(
+                    text = description,
+                    fontSize = 10.sp,
+                    color = Color(0xFF5E546E)
+                )
+            }
+
+            Switch(
+                checked = isSelected,
+                onCheckedChange = { if (it) onSelect() },
+                colors = SwitchDefaults.colors(
+                    checkedThumbColor = Color.White,
+                    checkedTrackColor = Color(0xFF007A5E),
+                    uncheckedThumbColor = Color.White,
+                    uncheckedTrackColor = Color(0xFF777777)
+                )
+            )
         }
     }
 }

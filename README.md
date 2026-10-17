@@ -105,7 +105,8 @@ adb -s 00450GA262620081 logcat -v time WheeltopManager:V MagicshineRemoteManager
 ## 📝 Changelog
 
 ### v0.0.3 - Ham 🐵🚀 (First Chimpanzee in Space Release)
-- **Block 0..4 Full Telemetry & Parameter UI**: Expanded WheelTop card UI below Voltages & Firmware to display all parsed parameters (Session Key, Firmware versions, Power levels, Gear/Chainring positions, Unlock status, and Raw ASCII string) from Blocks 0..4.
+- **3-Way Double-Click Remote Selector**: Integrated DataStore-backed options for Double-Click actions: 1) FD Chainring Toggle, 2) Disable Double-Click (protect FD), or 3) 250ms Burst Shift (Square +2 gears / Circle -2 gears).
+- **Block 0..4 Full Telemetry & Parameter UI**: Expanded WheelTop card UI below Voltages & Firmware to display all parsed parameters (Session Key, Firmware versions, Power levels, Gear/Chainring positions, Unlock status) from Blocks 0..4.
 - **Magicshine M0-C0 MJ_6558 Blip Remote Engine**: Integrated instant 15ms `ScanRecord.serviceData` keypress capture.
 - **Token-Based Burst Filtering**: Implemented `seqToken = data[3]` duplicate filtering (1 clean shift per button click).
 - **Single-Action FD_TOGGLE**: Standardized front derailleur chainring switching.

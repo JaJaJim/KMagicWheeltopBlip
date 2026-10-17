@@ -20,6 +20,7 @@ class RemotePreferences(private val context: Context) {
         private val BOUND_REMOTE_MAC_KEY = stringPreferencesKey("bound_remote_mac")
         private val BOUND_REMOTE_NAME_KEY = stringPreferencesKey("bound_remote_name")
         private val IS_MONITORED_KEY = booleanPreferencesKey("is_monitored")
+        private val DOUBLE_CLICK_MODE_KEY = stringPreferencesKey("double_click_mode")
     }
 
     val boundWheeltopMac: Flow<String?> = context.dataStore.data.map { preferences ->
@@ -42,6 +43,10 @@ class RemotePreferences(private val context: Context) {
         preferences[IS_MONITORED_KEY] ?: false
     }
 
+    val doubleClickMode: Flow<String> = context.dataStore.data.map { preferences ->
+        preferences[DOUBLE_CLICK_MODE_KEY] ?: "FD_TOGGLE"
+    }
+
     suspend fun saveBoundWheeltop(mac: String, name: String) {
         context.dataStore.edit { preferences ->
             preferences[BOUND_WHEELTOP_MAC_KEY] = mac
@@ -61,6 +66,12 @@ class RemotePreferences(private val context: Context) {
     suspend fun saveIsMonitored(monitored: Boolean) {
         context.dataStore.edit { preferences ->
             preferences[IS_MONITORED_KEY] = monitored
+        }
+    }
+
+    suspend fun saveDoubleClickMode(mode: String) {
+        context.dataStore.edit { preferences ->
+            preferences[DOUBLE_CLICK_MODE_KEY] = mode
         }
     }
 

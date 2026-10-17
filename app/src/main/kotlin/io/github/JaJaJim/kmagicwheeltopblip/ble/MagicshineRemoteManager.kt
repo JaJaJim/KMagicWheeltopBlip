@@ -57,6 +57,9 @@ class MagicshineRemoteManager private constructor(private val appContext: Contex
     private val _lastClickText = MutableStateFlow<String?>("No clicks registered yet")
     val lastClickText: StateFlow<String?> = _lastClickText.asStateFlow()
 
+    private val _doubleClickMode = MutableStateFlow("FD_TOGGLE")
+    val doubleClickMode: StateFlow<String> = _doubleClickMode.asStateFlow()
+
     private val foundRemotesMap = mutableMapOf<String, BleDeviceItem>()
     private var lastSequenceToken = -1
     private var lastButtonCode = -1
@@ -79,6 +82,19 @@ class MagicshineRemoteManager private constructor(private val appContext: Contex
             remotePreferences.boundRemoteName.collect { name ->
                 _boundRemoteName.value = name
             }
+        }
+
+        scope.launch {
+            remotePreferences.doubleClickMode.collect { mode ->
+                _doubleClickMode.value = mode
+            }
+        }
+    }
+
+    fun setDoubleClickMode(mode: String) {
+        _doubleClickMode.value = mode
+        scope.launch {
+            remotePreferences.saveDoubleClickMode(mode)
         }
     }
 
@@ -227,10 +243,36 @@ class MagicshineRemoteManager private constructor(private val appContext: Contex
 
         when {
             has12 || has22 -> {
-                val msg = "DOUBLE CLICK [□/○] -> FD Chainring Toggle"
-                _lastClickText.value = msg
-                Log.i(TAG, "===> [BLIP EVENT] $msg")
-                wheeltopManager.toggleFrontDerailleur()
+                val mode = _doubleClickMode.value
+                val isSquare = has12
+                val buttonName = if (isSquare) "Square [□]" else "Circle [○]"
+
+                when (mode) {
+                    "DISABLED" -> {
+                        val msg = "DOUBLE CLICK ($buttonName) -> Disabled (Ignored)"
+                        _lastClickText.value = msg
+                        Log.i(TAG, "===> [BLIP EVENT] $msg")
+                    }
+                    "BURST_SHIFT" -> {
+                        val directionName = if (isSquare) "+2 Gänge Hoch" else "-2 Gänge Runter"
+                        val msg = "DOUBLE CLICK ($buttonName) -> Burst Shift $directionName"
+                        _lastClickText.value = msg
+                        Log.i(TAG, "===> [BLIP EVENT] $msg")
+                        scope.launch(Dispatchers.IO) {
+                            val dir = if (isSquare) 2 else 1
+                            wheeltopManager.shiftRear(dir)
+                            delay(250)
+                            wheeltopManager.shiftRear(dir)
+                        }
+                    }
+                    else -> {
+                        // "FD_TOGGLE" (Default)
+                        val msg = "DOUBLE CLICK ($buttonName) -> FD Chainring Toggle"
+                        _lastClickText.value = msg
+                        Log.i(TAG, "===> [BLIP EVENT] $msg")
+                        wheeltopManager.toggleFrontDerailleur()
+                    }
+                }
             }
             has11 -> {
                 val msg = "Square [□] Single Click -> RD Shift Up"
