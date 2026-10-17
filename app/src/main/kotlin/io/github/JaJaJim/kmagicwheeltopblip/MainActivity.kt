@@ -126,6 +126,7 @@ fun EdsChargeLightScreen(wheeltopManager: WheeltopManager, remoteManager: Magics
 
     val statusText = when {
         !isMonitored -> "BLE Disconnected"
+        blockStatusText == "Auto-Reconnecting..." -> "Auto-Reconnecting..."
         connectionState == ConnectionState.CONNECTED -> "GATT Connected"
         connectionState == ConnectionState.CONNECTING -> "Connecting GATT..."
         else -> "BLE Disconnected"

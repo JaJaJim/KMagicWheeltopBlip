@@ -73,6 +73,7 @@ class WheeltopManager private constructor(context: Context) {
     private var sessionKeyByte: Byte? = null
     private var initJob: Job? = null
     private var connectTimeoutJob: Job? = null
+    private var blockWatchdogJob: Job? = null
 
     @Volatile
     private var isLatched = false
@@ -230,6 +231,21 @@ class WheeltopManager private constructor(context: Context) {
 
         _connectionState.value = ConnectionState.CONNECTING
 
+        blockWatchdogJob?.cancel()
+        blockWatchdogJob = scope.launch(Dispatchers.IO) {
+            delay(5000)
+            if (_isMonitored.value && _blockStatusText.value != "Blocks 0..4 Unlocked (5/5 Complete)") {
+                Log.w(TAG, "===> [WATCHDOG 5s TIMEOUT] Block readout incomplete. Executing Auto-Reconnect...")
+                _blockStatusText.value = "Auto-Reconnecting..."
+                disconnectGatt()
+                delay(1500)
+                val boundMac = _boundMacAddress.value
+                if (_isMonitored.value && !boundMac.isNullOrBlank()) {
+                    connectToBoundDevice(boundMac)
+                }
+            }
+        }
+
         scope.launch(Dispatchers.Main) {
             try {
                 Log.i(TAG, "[RULE 1] Connecting DIRECT SINGLE GATT Client to MAC: $macAddress ...")
@@ -290,6 +306,8 @@ class WheeltopManager private constructor(context: Context) {
     @SuppressLint("MissingPermission")
     private fun disconnectGatt() {
         Log.i(TAG, "[RULE 4] disconnectGatt() invoked. Force cancelling jobs, closing GATT socket, and resetting state...")
+        blockWatchdogJob?.cancel()
+        blockWatchdogJob = null
         connectTimeoutJob?.cancel()
         connectTimeoutJob = null
         initJob?.cancel()
@@ -327,10 +345,13 @@ class WheeltopManager private constructor(context: Context) {
             Log.i(TAG, "onConnectionStateChange: status=$status, newState=$newState")
 
             if (status != BluetoothGatt.GATT_SUCCESS || newState != BluetoothProfile.STATE_CONNECTED) {
-                Log.w(TAG, "onConnectionStateChange status=$status, newState=$newState. Scheduling self-healing auto-reconnect with 500ms quiet period...")
+                Log.w(TAG, "onConnectionStateChange status=$status, newState=$newState. Scheduling self-healing auto-reconnect with 1500ms quiet period...")
+                if (_isMonitored.value) {
+                    _blockStatusText.value = "Auto-Reconnecting..."
+                }
                 disconnectGatt()
                 scope.launch(Dispatchers.Main) {
-                    delay(500)
+                    delay(1500)
                     val boundMac = _boundMacAddress.value
                     if (_isMonitored.value && !boundMac.isNullOrBlank()) {
                         connectToBoundDevice(boundMac)
@@ -541,6 +562,8 @@ class WheeltopManager private constructor(context: Context) {
                     sendAppProtocolCommand("read block 4 (0xFB)", 0xFB, byteArrayOf(0x00, 0x04, 0x51.toByte()))
                 }
             } else if (pingPongStep == 6) {
+                blockWatchdogJob?.cancel()
+                blockWatchdogJob = null
                 _blockStatusText.value = "Blocks 0..4 Unlocked (5/5 Complete)"
                 Log.i(TAG, "===> [BLOCK 4 RECEIVED (132 BYTES)!] ALL BLOCKS 0..4 FULLY UNLOCKED!")
             }
