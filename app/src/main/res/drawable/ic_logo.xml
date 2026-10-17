@@ -1,60 +1,20 @@
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
-    android:width="500dp"
-    android:height="500dp"
-    android:viewportWidth="500"
-    android:viewportHeight="500">
+    android:width="450dp"
+    android:height="400dp"
+    android:viewportWidth="450"
+    android:viewportHeight="400">
 
-    <!-- Top Battery Cap -->
+    <!-- 1. Die bewährte, breite Pyramiden-Basis -->
     <path
-        android:fillColor="#1E1B2E"
-        android:pathData="M210,94 h80 a8,8 0 0,1 8,8 v14 a8,8 0 0,1 -8,8 h-80 a8,8 0 0,1 -8,-8 v-14 a8,8 0 0,1 8,-8 z" />
+        android:fillColor="#121212"
+        android:pathData="M 225,40 L 369,330 L 343,330 L 225,90 L 107,330 L 81,330 Z" />
 
-    <!-- Outer Battery Outline -->
     <path
-        android:strokeColor="#1E1B2E"
-        android:strokeWidth="12"
-        android:fillColor="#00000000"
-        android:strokeLineJoin="round"
-        android:pathData="M152,122 h196 a30,30 0 0,1 30,30 v256 a30,30 0 0,1 -30,30 h-196 a30,30 0 0,1 -30,-30 v-256 a30,30 0 0,1 30,-30 z" />
+        android:fillColor="#121212"
+        android:pathData="M 225,92 L 208,225 L 303,330 L 129,330 Z" />
 
-    <!-- 5 Battery Level Bars clipped with WheelTop Cutout -->
-    <group>
-        <clip-path
-            android:pathData="M0,0 h500 v500 h-500 z M 340 372 L 250 174 L 160 372 L 198 306 L 250 222 L 250 306 Z"
-            android:fillType="evenOdd" />
-
-        <!-- Level 1 (Bottom, Orange) -->
-        <path
-            android:fillColor="#E05326"
-            android:pathData="M142,374 h216 a4,4 0 0,1 4,4 v36 a4,4 0 0,1 -4,4 h-216 a4,4 0 0,1 -4,-4 v-36 a4,4 0 0,1 4,-4 z" />
-
-        <!-- Level 2 (Orange-Transition) -->
-        <path
-            android:fillColor="#B97545"
-            android:pathData="M142,318 h216 a4,4 0 0,1 4,4 v36 a4,4 0 0,1 -4,4 h-216 a4,4 0 0,1 -4,-4 v-36 a4,4 0 0,1 4,-4 z" />
-
-        <!-- Level 3 (Middle) -->
-        <path
-            android:fillColor="#919763"
-            android:pathData="M142,262 h216 a4,4 0 0,1 4,4 v36 a4,4 0 0,1 -4,4 h-216 a4,4 0 0,1 -4,-4 v-36 a4,4 0 0,1 4,-4 z" />
-
-        <!-- Level 4 (Turquoise-Transition) -->
-        <path
-            android:fillColor="#6AB982"
-            android:pathData="M142,206 h216 a4,4 0 0,1 4,4 v36 a4,4 0 0,1 -4,4 h-216 a4,4 0 0,1 -4,-4 v-36 a4,4 0 0,1 4,-4 z" />
-
-        <!-- Level 5 (Top, Turquoise) -->
-        <path
-            android:fillColor="#45DDA0"
-            android:pathData="M142,150 h216 a4,4 0 0,1 4,4 v36 a4,4 0 0,1 -4,4 h-216 a4,4 0 0,1 -4,-4 v-36 a4,4 0 0,1 4,-4 z" />
-    </group>
-
-    <!-- Foreground WheelTop Path with 6px outline -->
+    <!-- 2. Optimierter, fließender orangefarbener Doppelschweif -->
     <path
-        android:fillColor="#00000000"
-        android:strokeColor="#1E1B2E"
-        android:strokeWidth="6"
-        android:strokeLineJoin="round"
-        android:strokeLineCap="round"
-        android:pathData="M 340 372 L 250 174 L 160 372 L 198 306 L 250 222 L 250 306 Z" />
+        android:fillColor="#FF5500"
+        android:pathData="M 45,210 C 111,126 236,126 268,205 C 293,165 369,158 405,232 C 369,196 336,190 302,265 C 249,158 129,162 45,220 Z" />
 </vector>

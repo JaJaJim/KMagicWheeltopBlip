@@ -186,6 +186,14 @@ fun EdsChargeLightScreen(wheeltopManager: WheeltopManager, remoteManager: Magics
                 )
             }
 
+            Text(
+                text = "Wheeltop EDS",
+                fontSize = 15.sp,
+                fontWeight = FontWeight.Bold,
+                color = Color(0xFF1E1B2E),
+                modifier = Modifier.padding(vertical = 6.dp)
+            )
+
             GattMasterCard(
                 deviceName = modelName,
                 statusText = statusText,
@@ -214,7 +222,7 @@ fun EdsChargeLightScreen(wheeltopManager: WheeltopManager, remoteManager: Magics
             Spacer(modifier = Modifier.height(14.dp))
 
             Text(
-                text = "Magicshine M0-C0 MJ_6558 Remote",
+                text = "Magicshine Remote",
                 fontSize = 15.sp,
                 fontWeight = FontWeight.Bold,
                 color = Color(0xFF1E1B2E),
