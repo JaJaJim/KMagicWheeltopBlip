@@ -78,6 +78,10 @@ class WheeltopManager private constructor(context: Context) {
     private var isLatched = false
 
     @Volatile
+    var isShiftInProgress = false
+        private set
+
+    @Volatile
     private var pingPongStep = 0
 
     private val _connectionState = MutableStateFlow(ConnectionState.DISCONNECTED)
@@ -217,21 +221,8 @@ class WheeltopManager private constructor(context: Context) {
         _connectionState.value = ConnectionState.CONNECTING
 
         scope.launch(Dispatchers.Main) {
-            Log.i(TAG, "[AUTO-SCAN CACHE] Triggering 1-second BLE Scan to populate $macAddress in Android GATT cache...")
-            val scanner = bluetoothAdapter?.bluetoothLeScanner
-            val scanCallback = object : android.bluetooth.le.ScanCallback() {}
-
             try {
-                scanner?.startScan(scanCallback)
-                delay(1000)
-                scanner?.stopScan(scanCallback)
-                delay(300)
-            } catch (e: Exception) {
-                Log.e(TAG, "Scan error: ${e.message}")
-            }
-
-            try {
-                Log.i(TAG, "[RULE 1] Connecting SINGLE GATT Client to MAC: $macAddress ...")
+                Log.i(TAG, "[RULE 1] Connecting DIRECT SINGLE GATT Client to MAC: $macAddress ...")
                 val device = bluetoothAdapter?.getRemoteDevice(macAddress) ?: return@launch
 
                 activeGatt = device.connectGatt(appContext, false, gattCallback, BluetoothDevice.TRANSPORT_LE)
@@ -247,6 +238,41 @@ class WheeltopManager private constructor(context: Context) {
             } catch (e: Exception) {
                 Log.e(TAG, "GATT connection error to $macAddress: ${e.message}")
                 _connectionState.value = ConnectionState.DISCONNECTED
+            }
+        }
+    }
+
+    @SuppressLint("MissingPermission")
+    fun startScanForWheeltopDevices() {
+        if (bluetoothAdapter == null || !bluetoothAdapter!!.isEnabled) return
+        val scanner = bluetoothAdapter?.bluetoothLeScanner ?: return
+
+        val foundList = mutableListOf<BleDeviceItem>()
+        val scanCallback = object : android.bluetooth.le.ScanCallback() {
+            override fun onScanResult(callbackType: Int, result: android.bluetooth.le.ScanResult?) {
+                val device = result?.device ?: return
+                val name = device.name ?: result.scanRecord?.deviceName ?: return
+                val upper = name.uppercase()
+
+                val isMasterDerailleur = (upper.contains("EDS TX") || upper.contains("EDS OX") || upper.contains("EDS GX") || upper.contains("EDS GEX"))
+                        && !upper.contains("WHEELTOP") && !upper.contains("M0-C0") && !upper.contains("MJ_")
+
+                if (isMasterDerailleur) {
+                    if (foundList.none { it.address == device.address }) {
+                        foundList.add(BleDeviceItem(name = name, address = device.address, rssi = result.rssi))
+                        _scannedDevices.value = foundList.toList()
+                    }
+                }
+            }
+        }
+
+        scope.launch(Dispatchers.Main) {
+            try {
+                scanner.startScan(scanCallback)
+                delay(3000)
+                scanner.stopScan(scanCallback)
+            } catch (e: Exception) {
+                Log.e(TAG, "Error scanning for WheelTop devices: ${e.message}")
             }
         }
     }
@@ -515,6 +541,7 @@ class WheeltopManager private constructor(context: Context) {
             } else {
                 val ringName = if (gearPos == 2) "Big Chainring" else "Small Chainring"
                 Log.i(TAG, "===> [FD SHIFT COMPLETE] Front Derailleur Shifted to $ringName (Position $gearPos)")
+                isShiftInProgress = false
             }
             return
         }
@@ -528,6 +555,7 @@ class WheeltopManager private constructor(context: Context) {
                 Log.i(TAG, "===> [RD SHIFT] Rear Derailleur Motor Running...")
             } else if (gearPos in 1..14) {
                 Log.i(TAG, "===> [RD SHIFT COMPLETE] Rear Derailleur Shifted to Gear $gearPos")
+                isShiftInProgress = false
             } else if (decoded.size >= 8) {
                 // Parse battery telemetry if present in 0x98 frame
                 val voltsRaw = (((decoded.getOrNull(6)?.toInt() ?: 0) and 0xFF) shl 8) or ((decoded.getOrNull(7)?.toInt() ?: 0) and 0xFF)
@@ -689,16 +717,22 @@ class WheeltopManager private constructor(context: Context) {
     }
 
     fun shiftRear(direction: Int) {
+        isShiftInProgress = true
         scope.launch(Dispatchers.IO) {
             Log.i(TAG, "[ADB SHIFT] Shifting Rear Derailleur (RD) direction: $direction")
             sendAppProtocolCommand("Rear Shift ($direction)", 0x99, byteArrayOf(direction.toByte()))
+            delay(1200)
+            isShiftInProgress = false
         }
     }
 
     fun toggleFrontDerailleur() {
+        isShiftInProgress = true
         scope.launch(Dispatchers.IO) {
             Log.i(TAG, "[ADB SHIFT] Toggling Front Derailleur (FD)...")
             sendAppProtocolCommand("Front Derailleur Toggle", 0x89, byteArrayOf(0x02.toByte()))
+            delay(1200)
+            isShiftInProgress = false
         }
     }
 }

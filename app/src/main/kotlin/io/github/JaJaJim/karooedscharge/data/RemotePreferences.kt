@@ -17,6 +17,8 @@ class RemotePreferences(private val context: Context) {
     companion object {
         private val BOUND_WHEELTOP_MAC_KEY = stringPreferencesKey("bound_wheeltop_mac")
         private val BOUND_WHEELTOP_NAME_KEY = stringPreferencesKey("bound_wheeltop_name")
+        private val BOUND_REMOTE_MAC_KEY = stringPreferencesKey("bound_remote_mac")
+        private val BOUND_REMOTE_NAME_KEY = stringPreferencesKey("bound_remote_name")
         private val IS_MONITORED_KEY = booleanPreferencesKey("is_monitored")
     }
 
@@ -26,6 +28,14 @@ class RemotePreferences(private val context: Context) {
 
     val boundWheeltopName: Flow<String?> = context.dataStore.data.map { preferences ->
         preferences[BOUND_WHEELTOP_NAME_KEY]
+    }
+
+    val boundRemoteMac: Flow<String?> = context.dataStore.data.map { preferences ->
+        preferences[BOUND_REMOTE_MAC_KEY]
+    }
+
+    val boundRemoteName: Flow<String?> = context.dataStore.data.map { preferences ->
+        preferences[BOUND_REMOTE_NAME_KEY]
     }
 
     val isMonitored: Flow<Boolean> = context.dataStore.data.map { preferences ->
@@ -41,6 +51,13 @@ class RemotePreferences(private val context: Context) {
         }
     }
 
+    suspend fun saveBoundRemote(mac: String, name: String) {
+        context.dataStore.edit { preferences ->
+            preferences[BOUND_REMOTE_MAC_KEY] = mac
+            preferences[BOUND_REMOTE_NAME_KEY] = name
+        }
+    }
+
     suspend fun saveIsMonitored(monitored: Boolean) {
         context.dataStore.edit { preferences ->
             preferences[IS_MONITORED_KEY] = monitored
@@ -52,6 +69,13 @@ class RemotePreferences(private val context: Context) {
             preferences.remove(BOUND_WHEELTOP_MAC_KEY)
             preferences.remove(BOUND_WHEELTOP_NAME_KEY)
             preferences[IS_MONITORED_KEY] = false
+        }
+    }
+
+    suspend fun clearBoundRemote() {
+        context.dataStore.edit { preferences ->
+            preferences.remove(BOUND_REMOTE_MAC_KEY)
+            preferences.remove(BOUND_REMOTE_NAME_KEY)
         }
     }
 }

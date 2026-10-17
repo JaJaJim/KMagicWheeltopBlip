@@ -46,9 +46,13 @@
             <intent-filter>
                 <action android:name="io.github.JaJaJim.karooedscharge.CONNECT" />
                 <action android:name="io.github.JaJaJim.karooedscharge.DISCONNECT" />
+                <action android:name="io.github.JaJaJim.karooedscharge.UNBIND_REMOTE" />
                 <action android:name="io.github.JaJaJim.karooedscharge.RD_SHIFT_UP" />
                 <action android:name="io.github.JaJaJim.karooedscharge.RD_SHIFT_DOWN" />
                 <action android:name="io.github.JaJaJim.karooedscharge.FD_TOGGLE" />
+                <action android:name="io.github.JaJaJim.karooedscharge.REMOTE_SQUARE" />
+                <action android:name="io.github.JaJaJim.karooedscharge.REMOTE_CIRCLE" />
+                <action android:name="io.github.JaJaJim.karooedscharge.REMOTE_DOUBLE_CLICK" />
             </intent-filter>
         </receiver>
 

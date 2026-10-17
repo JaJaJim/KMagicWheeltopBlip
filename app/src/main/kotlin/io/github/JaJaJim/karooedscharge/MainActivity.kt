@@ -29,6 +29,7 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
@@ -41,12 +42,14 @@ import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import io.github.JaJaJim.karooedscharge.ble.BleDeviceItem
 import io.github.JaJaJim.karooedscharge.ble.ConnectionState
+import io.github.JaJaJim.karooedscharge.ble.MagicshineRemoteManager
 import io.github.JaJaJim.karooedscharge.ble.WheeltopManager
 import java.util.Locale
 
 class MainActivity : ComponentActivity() {
 
     private lateinit var wheeltopManager: WheeltopManager
+    private lateinit var remoteManager: MagicshineRemoteManager
 
     private val requestPermissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
@@ -55,6 +58,7 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         wheeltopManager = WheeltopManager.getInstance(applicationContext)
+        remoteManager = MagicshineRemoteManager.getInstance(applicationContext)
 
         checkPermissionsAndScan()
 
@@ -64,7 +68,7 @@ class MainActivity : ComponentActivity() {
                     modifier = Modifier.fillMaxSize(),
                     color = Color(0xFFE6DAF0) // Light soft violet background
                 ) {
-                    EdsChargeLightScreen(wheeltopManager = wheeltopManager)
+                    EdsChargeLightScreen(wheeltopManager = wheeltopManager, remoteManager = remoteManager)
                 }
             }
         }
@@ -92,12 +96,17 @@ class MainActivity : ComponentActivity() {
 }
 
 @Composable
-fun EdsChargeLightScreen(wheeltopManager: WheeltopManager) {
+fun EdsChargeLightScreen(wheeltopManager: WheeltopManager, remoteManager: MagicshineRemoteManager) {
     val connectionState by wheeltopManager.connectionState.collectAsState()
     val boundMac by wheeltopManager.boundMacAddress.collectAsState()
     val boundName by wheeltopManager.boundDeviceName.collectAsState()
-    val scannedDevices by wheeltopManager.scannedDevices.collectAsState()
     val isMonitored by wheeltopManager.isMonitored.collectAsState()
+
+    val remoteConnectionState by remoteManager.connectionState.collectAsState()
+    val boundRemoteMac by remoteManager.boundRemoteMac.collectAsState()
+    val boundRemoteName by remoteManager.boundRemoteName.collectAsState()
+    val scannedRemotes by remoteManager.scannedRemotes.collectAsState()
+    val lastClickText by remoteManager.lastClickText.collectAsState()
 
     val gattRearVolts by wheeltopManager.gattRearVolts.collectAsState()
     val gattFrontVolts by wheeltopManager.gattFrontVolts.collectAsState()
@@ -114,6 +123,23 @@ fun EdsChargeLightScreen(wheeltopManager: WheeltopManager) {
         connectionState == ConnectionState.CONNECTED -> "GATT Connected"
         connectionState == ConnectionState.CONNECTING -> "Connecting GATT..."
         else -> "BLE Disconnected"
+    }
+
+    val remoteStatusText = when (remoteConnectionState) {
+        ConnectionState.CONNECTED -> "Remote Active (Low Latency)"
+        ConnectionState.CONNECTING -> "Connecting Remote..."
+        else -> "Remote Standby"
+    }
+
+    val modelName = boundName ?: "EDS TX"
+    val isOxModel = modelName.contains("OX", ignoreCase = true)
+    val isGxModel = modelName.contains("GX", ignoreCase = true) || modelName.contains("GEX", ignoreCase = true)
+
+    // Auto-scan for remotes if no remote is bound
+    LaunchedEffect(boundRemoteMac) {
+        if (boundRemoteMac.isNullOrBlank()) {
+            remoteManager.startScanForRemotes()
+        }
     }
 
     val scrollState = rememberScrollState()
@@ -136,13 +162,13 @@ fun EdsChargeLightScreen(wheeltopManager: WheeltopManager) {
             ) {
                 Column {
                     Text(
-                        text = "KarooEDSCharge",
+                        text = "KarooEDSCharge v0.0.3",
                         fontSize = 20.sp,
                         fontWeight = FontWeight.Bold,
                         color = Color(0xFF1E1B2E)
                     )
                     Text(
-                        text = "Wheeltop EDS XT Battery Monitor",
+                        text = "Ham 🐵🚀 Release (Magicshine M0-C0 MJ_6558)",
                         fontSize = 12.sp,
                         color = Color(0xFF5E546E)
                     )
@@ -156,70 +182,167 @@ fun EdsChargeLightScreen(wheeltopManager: WheeltopManager) {
             }
 
             Text(
-                text = "Master GATT Gear",
+                text = "WheelTop EDS Derailleur ($modelName)",
                 fontSize = 15.sp,
                 fontWeight = FontWeight.Bold,
                 color = Color(0xFF1E1B2E),
                 modifier = Modifier.padding(vertical = 6.dp)
             )
 
-            val devicesToDisplay: List<BleDeviceItem> = when {
-                !boundMac.isNullOrBlank() -> listOf(
+            GattMasterCard(
+                deviceName = modelName,
+                statusText = statusText,
+                isMonitored = isMonitored,
+                isOxModel = isOxModel,
+                isGxModel = isGxModel,
+                gattRearVolts = gattRearVolts,
+                gattFrontVolts = gattFrontVolts,
+                gattShifterRightVolts = gattShifterRightVolts,
+                gattShifterLeftVolts = gattShifterLeftVolts,
+                gattRearFirmware = gattRearFirmware,
+                gattFrontFirmware = gattFrontFirmware,
+                gattShifterRightFirmware = gattShifterRightFirmware,
+                gattShifterLeftFirmware = gattShifterLeftFirmware,
+                onMonitoredChange = { enabled ->
+                    val mac = if (boundMac.isNullOrBlank()) "D4:85:A1:BE:24:3B" else boundMac!!
+                    if (boundMac.isNullOrBlank()) {
+                        wheeltopManager.bindDevice(mac, "EDS TX")
+                    }
+                    wheeltopManager.toggleMonitoring(enabled)
+                }
+            )
+
+            Spacer(modifier = Modifier.height(14.dp))
+
+            Text(
+                text = "Magicshine M0-C0 MJ_6558 Remote",
+                fontSize = 15.sp,
+                fontWeight = FontWeight.Bold,
+                color = Color(0xFF1E1B2E),
+                modifier = Modifier.padding(vertical = 6.dp)
+            )
+
+            val displayRemotes = when {
+                !boundRemoteMac.isNullOrBlank() -> listOf(
                     BleDeviceItem(
-                        name = boundName ?: "Wheeltop EDS XT",
-                        address = boundMac!!,
+                        name = boundRemoteName ?: "M0-C0 MJ_6558",
+                        address = boundRemoteMac!!,
                         rssi = 0
                     )
                 )
-                scannedDevices.isNotEmpty() -> scannedDevices
-                else -> emptyList()
+                scannedRemotes.isNotEmpty() -> scannedRemotes
+                else -> listOf(
+                    BleDeviceItem(
+                        name = "M0-C0 MJ_6558",
+                        address = "60:03:00:08:CC:77",
+                        rssi = 0
+                    )
+                )
             }
 
-            if (devicesToDisplay.isNotEmpty()) {
-                devicesToDisplay.forEach { device ->
-                    GattMasterCard(
-                        deviceName = device.name,
-                        statusText = statusText,
-                        isMonitored = isMonitored,
-                        gattRearVolts = gattRearVolts,
-                        gattFrontVolts = gattFrontVolts,
-                        gattShifterRightVolts = gattShifterRightVolts,
-                        gattShifterLeftVolts = gattShifterLeftVolts,
-                        gattRearFirmware = gattRearFirmware,
-                        gattFrontFirmware = gattFrontFirmware,
-                        gattShifterRightFirmware = gattShifterRightFirmware,
-                        gattShifterLeftFirmware = gattShifterLeftFirmware,
-                        onMonitoredChange = { enabled ->
-                            if (boundMac.isNullOrBlank()) {
-                                wheeltopManager.bindDevice(device.address, device.name)
-                            } else {
-                                wheeltopManager.toggleMonitoring(enabled)
-                            }
+            displayRemotes.forEach { remoteItem ->
+                val isThisRemoteBound = boundRemoteMac.equals(remoteItem.address, ignoreCase = true)
+                RemoteCard(
+                    deviceName = remoteItem.name,
+                    deviceMac = remoteItem.address,
+                    statusText = if (isThisRemoteBound) remoteStatusText else "Scanning for Remote...",
+                    isBound = isThisRemoteBound,
+                    lastClickText = if (isThisRemoteBound) lastClickText else null,
+                    onBindChange = { enabled ->
+                        if (enabled) {
+                            remoteManager.bindRemote(remoteItem.address, remoteItem.name)
+                        } else {
+                            remoteManager.unbindRemote()
                         }
-                    )
-                    Spacer(modifier = Modifier.height(10.dp))
-                }
-            } else {
-                Card(
-                    modifier = Modifier.fillMaxWidth(),
-                    colors = CardDefaults.cardColors(containerColor = Color(0x3FE53935)),
-                    border = BorderStroke(1.dp, Color(0x80D32F2F)),
-                    shape = RoundedCornerShape(14.dp)
-                ) {
-                    Column(modifier = Modifier.padding(14.dp)) {
-                        Text(
-                            text = "Search for shifting gear",
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 16.sp,
-                            color = Color(0xFF1E1B2E)
-                        )
-                        Text(
-                            text = statusText,
-                            fontSize = 12.sp,
-                            color = Color(0xFF5E546E)
-                        )
                     }
+                )
+                Spacer(modifier = Modifier.height(10.dp))
+            }
+        }
+    }
+}
+
+@Composable
+private fun RemoteCard(
+    deviceName: String,
+    deviceMac: String,
+    statusText: String,
+    isBound: Boolean,
+    lastClickText: String?,
+    onBindChange: (Boolean) -> Unit
+) {
+    val containerColor = if (isBound) Color(0x3F45DDA0) else Color(0x3FE53935)
+    val borderColor = if (isBound) Color(0x8045DDA0) else Color(0x80D32F2F)
+
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(containerColor = containerColor),
+        border = BorderStroke(1.dp, borderColor),
+        shape = RoundedCornerShape(14.dp)
+    ) {
+        Column(modifier = Modifier.padding(14.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column {
+                    Text(
+                        text = deviceName,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 16.sp,
+                        color = Color(0xFF1E1B2E)
+                    )
+                    Text(
+                        text = "$deviceMac ($statusText)",
+                        fontSize = 11.sp,
+                        color = Color(0xFF5E546E)
+                    )
                 }
+            }
+
+            if (isBound && !lastClickText.isNullOrBlank()) {
+                Spacer(modifier = Modifier.height(6.dp))
+                Text(
+                    text = "Live Feedback: $lastClickText",
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = Color(0xFF004D40)
+                )
+            }
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            Text(
+                text = "• Square Button [□]: RD Shift Up (1 click)\n• Circle Button [○]: RD Shift Down (1 click)\n• Double Click [□/○]: FD Chainring Toggle",
+                fontSize = 11.sp,
+                color = Color(0xFF333333)
+            )
+
+            Spacer(modifier = Modifier.height(10.dp))
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "Slide to bind",
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.Medium,
+                    color = Color(0xFF1E1B2E)
+                )
+
+                Switch(
+                    checked = isBound,
+                    onCheckedChange = onBindChange,
+                    colors = SwitchDefaults.colors(
+                        checkedThumbColor = Color.White,
+                        checkedTrackColor = Color(0xFF007A5E),
+                        uncheckedThumbColor = Color.White,
+                        uncheckedTrackColor = Color(0xFFB00020)
+                    )
+                )
             }
         }
     }
@@ -230,6 +353,8 @@ private fun GattMasterCard(
     deviceName: String,
     statusText: String,
     isMonitored: Boolean,
+    isOxModel: Boolean,
+    isGxModel: Boolean,
     gattRearVolts: Float?,
     gattFrontVolts: Float?,
     gattShifterRightVolts: Float?,
@@ -265,10 +390,22 @@ private fun GattMasterCard(
             if (isMonitored) {
                 Spacer(modifier = Modifier.height(10.dp))
 
+                // Rear Derailleur present on ALL models
                 VoltageLine(label = "Rear Derailleur", volts = gattRearVolts, firmware = gattRearFirmware)
-                VoltageLine(label = "Front Derailleur", volts = gattFrontVolts, firmware = gattFrontFirmware)
-                VoltageLine(label = "Shifter Right", volts = gattShifterRightVolts, firmware = gattShifterRightFirmware)
-                VoltageLine(label = "Shifter Left", volts = gattShifterLeftVolts, firmware = gattShifterLeftFirmware)
+
+                if (!isOxModel && !isGxModel) {
+                    // Front Derailleur present on EDS TX only
+                    VoltageLine(label = "Front Derailleur", volts = gattFrontVolts, firmware = gattFrontFirmware)
+                }
+
+                if (isOxModel) {
+                    // EDS OX has 1 Remote Shifter
+                    VoltageLine(label = "Remote Shifter", volts = gattShifterLeftVolts, firmware = gattShifterLeftFirmware)
+                } else {
+                    // EDS TX and GX have 2 Shifters
+                    VoltageLine(label = "Shifter Right", volts = gattShifterRightVolts, firmware = gattShifterRightFirmware)
+                    VoltageLine(label = "Shifter Left", volts = gattShifterLeftVolts, firmware = gattShifterLeftFirmware)
+                }
             }
 
             Spacer(modifier = Modifier.height(10.dp))
@@ -279,7 +416,7 @@ private fun GattMasterCard(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
-                    text = "Slide to monitor",
+                    text = "Slide to connect",
                     fontSize = 14.sp,
                     fontWeight = FontWeight.Medium,
                     color = Color(0xFF1E1B2E)
