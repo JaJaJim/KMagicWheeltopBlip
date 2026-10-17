@@ -216,15 +216,16 @@ class WheeltopManager private constructor(context: Context) {
         val boundMac = _boundMacAddress.value
         if (boundMac.isNullOrBlank()) return
 
-        Log.w(TAG, "===> [AUTO-RECONNECT] Resetting GATT and waiting 1.5s quiet period for MAC: $boundMac")
+        Log.w(TAG, "===> [AUTO-RECONNECT] Resetting GATT and waiting 2.0s quiet period for MAC: $boundMac")
         disconnectGatt()
 
         _blockStatusText.value = "Auto-Reconnecting..."
-        _connectionState.value = ConnectionState.CONNECTING
+        _connectionState.value = ConnectionState.DISCONNECTED
 
         scope.launch(Dispatchers.Main) {
-            delay(1500)
+            delay(2000)
             if (_isMonitored.value && !boundMac.isNullOrBlank()) {
+                Log.i(TAG, "===> [AUTO-RECONNECT] Cooldown complete. Calling connectToBoundDevice($boundMac)...")
                 connectToBoundDevice(boundMac)
             }
         }

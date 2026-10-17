@@ -336,7 +336,17 @@ private fun RemoteCard(
                 color = Color(0xFF1E1B2E)
             )
 
-            Spacer(modifier = Modifier.height(6.dp))
+            Spacer(modifier = Modifier.height(2.dp))
+
+            Text(
+                text = "Note: The remote automatically detects keypresses under ~500ms as double-clicks at the hardware level and emits dedicated double-click events.",
+                fontSize = 10.sp,
+                fontWeight = FontWeight.Normal,
+                color = Color(0xFF5E546E),
+                modifier = Modifier.padding(horizontal = 2.dp)
+            )
+
+            Spacer(modifier = Modifier.height(8.dp))
 
             DoubleClickOptionRow(
                 title = "1. Shift Front Derailleur (FD Toggle)",
@@ -361,16 +371,6 @@ private fun RemoteCard(
                 description = "□ 2x Up (+2 gears) / ○ 2x Down (-2 gears)",
                 isSelected = doubleClickMode == "BURST_SHIFT",
                 onSelect = { onDoubleClickModeChange("BURST_SHIFT") }
-            )
-
-            Spacer(modifier = Modifier.height(6.dp))
-
-            Text(
-                text = "Note: The remote automatically detects keypresses under ~500ms as double-clicks at the hardware level and emits dedicated double-click events.",
-                fontSize = 10.sp,
-                fontWeight = FontWeight.Normal,
-                color = Color(0xFF5E546E),
-                modifier = Modifier.padding(horizontal = 2.dp)
             )
 
             Spacer(modifier = Modifier.height(12.dp))
