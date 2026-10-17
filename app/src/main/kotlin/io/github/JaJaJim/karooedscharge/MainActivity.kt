@@ -38,6 +38,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
@@ -120,7 +121,6 @@ fun EdsChargeLightScreen(wheeltopManager: WheeltopManager, remoteManager: Magics
     val gattShifterLeftFirmware by wheeltopManager.gattShifterLeftFirmware.collectAsState()
 
     val blockParameters by wheeltopManager.blockParameters.collectAsState()
-    val rawBlockText by wheeltopManager.rawBlockText.collectAsState()
     val blockStatusText by wheeltopManager.blockStatusText.collectAsState()
 
     val statusText = when {
@@ -209,7 +209,6 @@ fun EdsChargeLightScreen(wheeltopManager: WheeltopManager, remoteManager: Magics
                 gattShifterRightFirmware = gattShifterRightFirmware,
                 gattShifterLeftFirmware = gattShifterLeftFirmware,
                 blockParameters = blockParameters,
-                rawBlockText = rawBlockText,
                 blockStatusText = blockStatusText,
                 onMonitoredChange = { enabled ->
                     val mac = if (boundMac.isNullOrBlank()) "D4:85:A1:BE:24:3B" else boundMac!!
@@ -372,7 +371,6 @@ private fun GattMasterCard(
     gattShifterRightFirmware: String?,
     gattShifterLeftFirmware: String?,
     blockParameters: Map<String, String>,
-    rawBlockText: String,
     blockStatusText: String?,
     onMonitoredChange: (Boolean) -> Unit
 ) {
@@ -430,11 +428,7 @@ private fun GattMasterCard(
 
                 Spacer(modifier = Modifier.height(8.dp))
 
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
+                Column(modifier = Modifier.fillMaxWidth()) {
                     Text(
                         text = "Block 0..4 Telemetry",
                         fontWeight = FontWeight.Bold,
@@ -447,7 +441,8 @@ private fun GattMasterCard(
                             text = blockStatusText,
                             fontSize = 11.sp,
                             fontWeight = FontWeight.Medium,
-                            color = Color(0xFF006644)
+                            color = Color(0xFF006644),
+                            modifier = Modifier.padding(top = 2.dp)
                         )
                     }
                 }
@@ -466,19 +461,23 @@ private fun GattMasterCard(
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .padding(vertical = 2.dp),
-                                horizontalArrangement = Arrangement.SpaceBetween
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.Top
                             ) {
                                 Text(
                                     text = key,
                                     fontSize = 11.sp,
                                     fontWeight = FontWeight.SemiBold,
-                                    color = Color(0xFF332F4C)
+                                    color = Color(0xFF332F4C),
+                                    modifier = Modifier.weight(1f)
                                 )
                                 Text(
                                     text = value,
                                     fontSize = 11.sp,
                                     fontWeight = FontWeight.Bold,
-                                    color = Color(0xFF1E1B2E)
+                                    color = Color(0xFF1E1B2E),
+                                    textAlign = TextAlign.End,
+                                    modifier = Modifier.weight(1.2f)
                                 )
                             }
                         }
@@ -488,17 +487,6 @@ private fun GattMasterCard(
                         text = "Waiting for Block 0..4 response...",
                         fontSize = 11.sp,
                         color = Color(0xFF777777)
-                    )
-                }
-
-                if (rawBlockText.isNotBlank()) {
-                    Spacer(modifier = Modifier.height(6.dp))
-                    Text(
-                        text = "Raw ASCII: \"$rawBlockText\"",
-                        fontSize = 10.sp,
-                        fontWeight = FontWeight.Normal,
-                        color = Color(0xFF555555),
-                        maxLines = 3
                     )
                 }
             }
