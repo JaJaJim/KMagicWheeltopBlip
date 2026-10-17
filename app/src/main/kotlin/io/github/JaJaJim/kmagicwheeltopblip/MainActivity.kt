@@ -330,7 +330,7 @@ private fun RemoteCard(
             Spacer(modifier = Modifier.height(10.dp))
 
             Text(
-                text = "Doppelklick Modus:",
+                text = "Double-Click Mode:",
                 fontSize = 13.sp,
                 fontWeight = FontWeight.Bold,
                 color = Color(0xFF1E1B2E)
@@ -339,8 +339,8 @@ private fun RemoteCard(
             Spacer(modifier = Modifier.height(6.dp))
 
             DoubleClickOptionRow(
-                title = "1. Umwerfer Schalten (FD Toggle)",
-                description = "Doppelklick schaltet Umwerfer (Groß / Klein)",
+                title = "1. Shift Front Derailleur (FD Toggle)",
+                description = "Double-click toggles chainrings (Big / Small)",
                 isSelected = doubleClickMode == "FD_TOGGLE",
                 onSelect = { onDoubleClickModeChange("FD_TOGGLE") }
             )
@@ -348,8 +348,8 @@ private fun RemoteCard(
             Spacer(modifier = Modifier.height(4.dp))
 
             DoubleClickOptionRow(
-                title = "2. Doppelklick Deaktivieren",
-                description = "Keine Doppelklick Funktion (Schutz vor Umwerfer)",
+                title = "2. Disable Double-Click",
+                description = "No double-click action (protects Front Derailleur)",
                 isSelected = doubleClickMode == "DISABLED",
                 onSelect = { onDoubleClickModeChange("DISABLED") }
             )
@@ -357,10 +357,20 @@ private fun RemoteCard(
             Spacer(modifier = Modifier.height(4.dp))
 
             DoubleClickOptionRow(
-                title = "3. 2 Gänge Schalten (250ms Burst)",
-                description = "□ 2x Up (+2 Gänge) / ○ 2x Down (-2 Gänge)",
+                title = "3. Shift 2 Gears (250ms Burst)",
+                description = "□ 2x Up (+2 gears) / ○ 2x Down (-2 gears)",
                 isSelected = doubleClickMode == "BURST_SHIFT",
                 onSelect = { onDoubleClickModeChange("BURST_SHIFT") }
+            )
+
+            Spacer(modifier = Modifier.height(6.dp))
+
+            Text(
+                text = "Note: The remote automatically detects keypresses under ~500ms as double-clicks at the hardware level and emits dedicated double-click events.",
+                fontSize = 10.sp,
+                fontWeight = FontWeight.Normal,
+                color = Color(0xFF5E546E),
+                modifier = Modifier.padding(horizontal = 2.dp)
             )
 
             Spacer(modifier = Modifier.height(12.dp))

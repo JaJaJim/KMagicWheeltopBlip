@@ -254,7 +254,7 @@ class MagicshineRemoteManager private constructor(private val appContext: Contex
                         Log.i(TAG, "===> [BLIP EVENT] $msg")
                     }
                     "BURST_SHIFT" -> {
-                        val directionName = if (isSquare) "+2 Gänge Hoch" else "-2 Gänge Runter"
+                        val directionName = if (isSquare) "+2 Gears Up" else "-2 Gears Down"
                         val msg = "DOUBLE CLICK ($buttonName) -> Burst Shift $directionName"
                         _lastClickText.value = msg
                         Log.i(TAG, "===> [BLIP EVENT] $msg")
