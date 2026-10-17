@@ -158,47 +158,41 @@ fun EdsChargeLightScreen(wheeltopManager: WheeltopManager, remoteManager: Magics
         verticalArrangement = Arrangement.SpaceBetween
     ) {
         Column {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(bottom = 4.dp)
-            ) {
-                Text(
-                    text = "KMagicWheeltopBlip",
-                    fontSize = 20.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = Color(0xFF1E1B2E),
-                    maxLines = 1
-                )
-                Text(
-                    text = "v0.0.3 • Ham 🐵🚀 Release",
-                    fontSize = 12.sp,
-                    color = Color(0xFF5E546E),
-                    modifier = Modifier.padding(top = 2.dp)
-                )
-            }
+            Text(
+                text = "KMagicWheeltopBlip",
+                fontSize = 20.sp,
+                fontWeight = FontWeight.Bold,
+                color = Color(0xFF1E1B2E)
+            )
 
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(vertical = 4.dp),
+                    .padding(bottom = 6.dp),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
-                    text = "Wheeltop EDS",
-                    fontSize = 15.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = Color(0xFF1E1B2E)
+                    text = "v0.0.3 • Ham 🐵🚀 Release",
+                    fontSize = 12.sp,
+                    color = Color(0xFF5E546E)
                 )
 
                 Image(
                     painter = painterResource(id = R.drawable.ic_logo),
                     contentDescription = "Logo",
                     contentScale = ContentScale.Fit,
-                    modifier = Modifier.size(48.dp)
+                    modifier = Modifier.size(44.dp)
                 )
             }
+
+            Text(
+                text = "Wheeltop EDS",
+                fontSize = 15.sp,
+                fontWeight = FontWeight.Bold,
+                color = Color(0xFF1E1B2E),
+                modifier = Modifier.padding(vertical = 4.dp)
+            )
 
             GattMasterCard(
                 deviceName = modelName,
