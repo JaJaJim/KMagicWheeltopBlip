@@ -19,7 +19,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -159,47 +158,47 @@ fun EdsChargeLightScreen(wheeltopManager: WheeltopManager, remoteManager: Magics
         verticalArrangement = Arrangement.SpaceBetween
     ) {
         Column {
-            // Header with Extension Title on Left and Logo on Right
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(bottom = 4.dp)
+            ) {
+                Text(
+                    text = "KMagicWheeltopBlip",
+                    fontSize = 20.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = Color(0xFF1E1B2E),
+                    maxLines = 1
+                )
+                Text(
+                    text = "v0.0.3 • Ham 🐵🚀 Release",
+                    fontSize = 12.sp,
+                    color = Color(0xFF5E546E),
+                    modifier = Modifier.padding(top = 2.dp)
+                )
+            }
+
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(bottom = 12.dp),
+                    .padding(vertical = 4.dp),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Column(
-                    modifier = Modifier.weight(1f)
-                ) {
-                    Text(
-                        text = "KMagicWheeltopBlip",
-                        fontSize = 20.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = Color(0xFF1E1B2E)
-                    )
-                    Text(
-                        text = "v0.0.3 • Ham 🐵🚀 Release",
-                        fontSize = 12.sp,
-                        color = Color(0xFF5E546E)
-                    )
-                }
-
-                Spacer(modifier = Modifier.width(8.dp))
+                Text(
+                    text = "Wheeltop EDS",
+                    fontSize = 15.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = Color(0xFF1E1B2E)
+                )
 
                 Image(
                     painter = painterResource(id = R.drawable.ic_logo),
                     contentDescription = "Logo",
                     contentScale = ContentScale.Fit,
-                    modifier = Modifier.size(60.dp)
+                    modifier = Modifier.size(48.dp)
                 )
             }
-
-            Text(
-                text = "Wheeltop EDS",
-                fontSize = 15.sp,
-                fontWeight = FontWeight.Bold,
-                color = Color(0xFF1E1B2E),
-                modifier = Modifier.padding(vertical = 6.dp)
-            )
 
             GattMasterCard(
                 deviceName = modelName,
