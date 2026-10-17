@@ -19,6 +19,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -166,25 +167,29 @@ fun EdsChargeLightScreen(wheeltopManager: WheeltopManager, remoteManager: Magics
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Column {
+                Column(
+                    modifier = Modifier.weight(1f)
+                ) {
                     Text(
-                        text = "KMagicWheeltopBlip v0.0.3",
+                        text = "KMagicWheeltopBlip",
                         fontSize = 20.sp,
                         fontWeight = FontWeight.Bold,
                         color = Color(0xFF1E1B2E)
                     )
                     Text(
-                        text = "Ham 🐵🚀 Release",
+                        text = "v0.0.3 • Ham 🐵🚀 Release",
                         fontSize = 12.sp,
                         color = Color(0xFF5E546E)
                     )
                 }
 
+                Spacer(modifier = Modifier.width(8.dp))
+
                 Image(
                     painter = painterResource(id = R.drawable.ic_logo),
                     contentDescription = "Logo",
                     contentScale = ContentScale.Fit,
-                    modifier = Modifier.size(54.dp)
+                    modifier = Modifier.size(60.dp)
                 )
             }
 
