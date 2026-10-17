@@ -162,7 +162,7 @@ fun EdsChargeLightScreen(wheeltopManager: WheeltopManager, remoteManager: Magics
             ) {
                 Column {
                     Text(
-                        text = "KarooEDSCharge v0.0.3",
+                        text = "KMagicWheeltopBlip v0.0.3",
                         fontSize = 20.sp,
                         fontWeight = FontWeight.Bold,
                         color = Color(0xFF1E1B2E)

@@ -1,8 +1,32 @@
-# KMagicWheeltopBlips 🚴‍♂️⚡🐵🚀
+# KMagicWheeltopBlip 🚴‍♂️⚡🐵🚀
 
-A Hammerhead Karoo 2 / Karoo 3 extension and standalone BLE control suite for **WheelTop EDS (TX, OX, GX, GeX)** electronic shifting systems and **Magicshine M0-C0 MJ_6558 / Olight** wireless handlebar blip remotes.
+A Hammerhead Karoo 2 / Karoo 3 extension and standalone BLE control suite for **WheelTop EDS (TX, OX, GX, GeX)** electronic shifting systems and **Magicshine M0-C0 MJ_6558** wireless handlebar blip remotes.
 
 Designed following Modern Android Development (MAD) Reactive Architecture for live battery voltage monitoring, remote shifting control, and custom data field integration on Hammerhead Karoo and open Android bike computers.
+
+---
+
+> [!CAUTION]
+> **⚠️ DISCLAIMER & WARNING**
+>
+> - **NO WARRANTY:** This software is provided "as is", without warranty of any kind, express or implied. Use entirely at your own risk.
+> - **EXCLUSION OF LIABILITY:** The author(s) accept **NO RESPONSIBILITY OR LIABILITY** for any damage to your hardware (e.g., WheelTop derailleurs, Karoo bike computers, accessories) or any personal injuries / accidents resulting from the use or misuse of this software.
+
+---
+
+> [!IMPORTANT]
+> **ℹ️ PROJECT STATUS & FUTURE ROADMAP**
+>
+> - **Initial Release / Proof of Concept:** This software is currently an early **Preview / Proof of Concept (PoC)**.
+> - **Functional Scope:** The current ADB and control scope is **not nearly as fully implemented** as in the reference implementation ([eds-ox by drJeckyll](https://git.jeckyll.net/published/personal/eds-ox)).
+> - **Planned Driver Architecture:** In a future release, this project is planned to be refactored into an independent, modular **WheelTop "Driver"** for Karoo/Android that will offer an open interface for connecting third-party extensions.
+
+---
+
+> [!WARNING]
+> **⚡ KNOWN ISSUES & USAGE NOTES**
+>
+> - **Connection Stability / Reconnect:** BLE connection establishment can currently be a bit **buggy** and may require multiple attempts, especially after a disconnect/reconnect cycle or after longer idle pauses between sessions.
 
 ---
 
@@ -11,7 +35,7 @@ Designed following Modern Android Development (MAD) Reactive Architecture for li
 Special thanks and legendary honors to:
 - **[drJeckyll & eds-ox Project](https://git.jeckyll.net/published/personal/eds-ox)**: The **Heavy Lifter Dockworker** who performed the fundamental reverse-engineering of the WheelTop BLE protocol and CRC algorithms.
 - **Google AI**: The **Cook** who prepared the mathematical formulas, BLE drivers, and reactive Android code.
-- **Peter Weber**: The supposed **AI Captain**, but factually the **Stowaway (Blinder Passagier)** on this epic space journey! 🙈🚀
+- **Peter Weber**: The supposed **AI Captain**, but factually the **Stowaway** on this epic space journey! 🙈🚀
 
 ---
 
@@ -32,10 +56,15 @@ adb shell am broadcast -a io.github.JaJaJim.karooedscharge.CONNECT -p io.github.
 adb shell am broadcast -a io.github.JaJaJim.karooedscharge.DISCONNECT -p io.github.JaJaJim.karooedscharge
 ```
 
-### 3. Unbinding & Resetting Magicshine Remote
-```powershell
-adb shell am broadcast -a io.github.JaJaJim.karooedscharge.UNBIND_REMOTE -p io.github.JaJaJim.karooedscharge
-```
+### 3. Binding & Unbinding Magicshine Remote
+- **Bind Remote MAC Address**:
+  ```powershell
+  adb shell am broadcast -a io.github.JaJaJim.karooedscharge.BIND_REMOTE -p io.github.JaJaJim.karooedscharge --es mac "60:03:00:08:CC:77"
+  ```
+- **Unbind & Reset Remote**:
+  ```powershell
+  adb shell am broadcast -a io.github.JaJaJim.karooedscharge.UNBIND_REMOTE -p io.github.JaJaJim.karooedscharge
+  ```
 
 ### 4. Direct Shifting Commands over BLE
 - **Rear Shift UP** (shifts outwards to a smaller cog / faster gear):

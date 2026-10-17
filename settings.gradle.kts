@@ -14,5 +14,5 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "KarooEDSCharge"
+rootProject.name = "KMagicWheeltopBlip"
 include(":app")

@@ -24,6 +24,16 @@ class AdbTestReceiver : BroadcastReceiver() {
             "io.github.JaJaJim.karooedscharge.DISCONNECT" -> {
                 wheeltopManager.toggleMonitoring(false)
             }
+            "io.github.JaJaJim.karooedscharge.BIND_REMOTE" -> {
+                val remoteMac = intent.getStringExtra("mac")
+                val remoteName = intent.getStringExtra("name") ?: "M0-C0 MJ_6558"
+                if (!remoteMac.isNullOrBlank()) {
+                    Log.i("AdbTestReceiver", "===> [ADB BIND REMOTE] Binding Magicshine Remote MAC: $remoteMac Name: $remoteName")
+                    remoteManager.bindRemote(remoteMac, remoteName)
+                } else {
+                    Log.w("AdbTestReceiver", "[ADB BIND REMOTE] Missing required 'mac' extra parameter.")
+                }
+            }
             "io.github.JaJaJim.karooedscharge.UNBIND_REMOTE" -> {
                 Log.i("AdbTestReceiver", "===> [ADB UNBIND REMOTE] Resetting Magicshine Remote binding configuration...")
                 remoteManager.unbindRemote()
