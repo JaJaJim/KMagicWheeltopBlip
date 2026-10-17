@@ -2,7 +2,7 @@
 
 A Hammerhead Karoo extension for **Wheeltop EDS (TX, OX, GX, GeX)** electronic shifting systems and **Magicshine M0-C0 MJ_6558** wireless handlebar blip remotes.
 
-This project is a new, native Android/Karoo (partial) re-implementation based on [drJeckyll's EDS-OX project](https://git.jeckyll.net/published/personal/eds-ox), specifically designed as a native Hammerhead Karoo extension to bring Wheeltop electronic derailleur telemetry and Magicshine remote control directly to your (TT-)handlebar.
+This project is a new, native Android/Karoo (partial) re-implementation based on [drJeckyll's EDS-OX project](https://git.jeckyll.net/published/personal/eds-ox), specifically designed as a native Hammerhead Karoo extension to bring Wheeltop electronic derailleur telemetry and wireless gear shifting via the Magicshine BLE remote control directly to your (TT-)handlebar.
 
 ---
 
