@@ -211,6 +211,25 @@ class WheeltopManager private constructor(context: Context) {
         }
     }
 
+    private fun triggerAutoReconnect() {
+        if (!_isMonitored.value) return
+        val boundMac = _boundMacAddress.value
+        if (boundMac.isNullOrBlank()) return
+
+        Log.w(TAG, "===> [AUTO-RECONNECT] Resetting GATT and waiting 1.5s quiet period for MAC: $boundMac")
+        disconnectGatt()
+
+        _blockStatusText.value = "Auto-Reconnecting..."
+        _connectionState.value = ConnectionState.CONNECTING
+
+        scope.launch(Dispatchers.Main) {
+            delay(1500)
+            if (_isMonitored.value && !boundMac.isNullOrBlank()) {
+                connectToBoundDevice(boundMac)
+            }
+        }
+    }
+
     @Synchronized
     @SuppressLint("MissingPermission")
     fun connectToBoundDevice(macAddress: String) {
@@ -235,14 +254,8 @@ class WheeltopManager private constructor(context: Context) {
         blockWatchdogJob = scope.launch(Dispatchers.IO) {
             delay(5000)
             if (_isMonitored.value && _blockStatusText.value != "Blocks 0..4 Unlocked (5/5 Complete)") {
-                Log.w(TAG, "===> [WATCHDOG 5s TIMEOUT] Block readout incomplete. Executing Auto-Reconnect...")
-                _blockStatusText.value = "Auto-Reconnecting..."
-                disconnectGatt()
-                delay(1500)
-                val boundMac = _boundMacAddress.value
-                if (_isMonitored.value && !boundMac.isNullOrBlank()) {
-                    connectToBoundDevice(boundMac)
-                }
+                Log.w(TAG, "===> [WATCHDOG 5s TIMEOUT] Block readout incomplete. Triggering Auto-Reconnect...")
+                triggerAutoReconnect()
             }
         }
 
@@ -257,8 +270,8 @@ class WheeltopManager private constructor(context: Context) {
                 connectTimeoutJob = scope.launch(Dispatchers.IO) {
                     delay(12_000)
                     if (_connectionState.value == ConnectionState.CONNECTING) {
-                        Log.e(TAG, "[CONNECT TIMEOUT] GATT connection to $macAddress timed out after 12s. Forcing disconnect & cleanup...")
-                        disconnectGatt()
+                        Log.e(TAG, "[CONNECT TIMEOUT] GATT connection to $macAddress timed out after 12s. Forcing Auto-Reconnect...")
+                        triggerAutoReconnect()
                     }
                 }
             } catch (e: Exception) {
@@ -345,17 +358,11 @@ class WheeltopManager private constructor(context: Context) {
             Log.i(TAG, "onConnectionStateChange: status=$status, newState=$newState")
 
             if (status != BluetoothGatt.GATT_SUCCESS || newState != BluetoothProfile.STATE_CONNECTED) {
-                Log.w(TAG, "onConnectionStateChange status=$status, newState=$newState. Scheduling self-healing auto-reconnect with 1500ms quiet period...")
+                Log.w(TAG, "onConnectionStateChange status=$status, newState=$newState. Triggering self-healing auto-reconnect...")
                 if (_isMonitored.value) {
-                    _blockStatusText.value = "Auto-Reconnecting..."
-                }
-                disconnectGatt()
-                scope.launch(Dispatchers.Main) {
-                    delay(1500)
-                    val boundMac = _boundMacAddress.value
-                    if (_isMonitored.value && !boundMac.isNullOrBlank()) {
-                        connectToBoundDevice(boundMac)
-                    }
+                    triggerAutoReconnect()
+                } else {
+                    disconnectGatt()
                 }
                 return
             }
