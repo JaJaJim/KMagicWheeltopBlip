@@ -19,6 +19,15 @@ Special thanks to the authors of:
 
 ## Changelog
 
+### v0.0.2 - Laika 🐶🚀 (First Dog in Space Release)
+- **100% Proven 5-Block BLE Engine**: Full-frame `CRC16-ARC (0x8005)` calculation, session key Bit-7 masking (`0x01..0x7F`), and 1.3-second complete memory readout across all 5 blocks (Block 0..4).
+- **ADB Shifting Control**:
+  - `RD_SHIFT_UP` & `RD_SHIFT_DOWN`: Shifting Rear Derailleur (RD) cogs over BLE.
+  - `FD_TOGGLE`: Single-action front derailleur chainring toggle over BLE.
+- **English Shift Event Decoder**: Real-time logging of motor start, trimming, overshift, and final gear positions directly in ADB logcat.
+- **500ms Qualcomm Hardware Quiet Period**: Bulletproof reconnects with zero GATT permit collisions.
+- **Continuous Unmasked ASCII Logging**: Live, uncorrupted battery voltage readout (`L_POWER`, `R_POWER`, `Q_POWER`, `H_POWER`).
+
 ### v0.0.1 (Work in Progress / Initial Build)
 - Initial release for Hammerhead Karoo.
 - Implemented LightOnKaroo Compose UI layout.

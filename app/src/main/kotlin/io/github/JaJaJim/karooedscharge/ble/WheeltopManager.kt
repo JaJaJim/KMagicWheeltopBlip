@@ -286,10 +286,10 @@ class WheeltopManager private constructor(context: Context) {
             Log.i(TAG, "onConnectionStateChange: status=$status, newState=$newState")
 
             if (status != BluetoothGatt.GATT_SUCCESS || newState != BluetoothProfile.STATE_CONNECTED) {
-                Log.w(TAG, "onConnectionStateChange status=$status, newState=$newState. Scheduling self-healing auto-reconnect in 1s...")
+                Log.w(TAG, "onConnectionStateChange status=$status, newState=$newState. Scheduling self-healing auto-reconnect with 500ms quiet period...")
                 disconnectGatt()
                 scope.launch(Dispatchers.Main) {
-                    delay(1000)
+                    delay(500)
                     val boundMac = _boundMacAddress.value
                     if (_isMonitored.value && !boundMac.isNullOrBlank()) {
                         connectToBoundDevice(boundMac)
@@ -407,17 +407,13 @@ class WheeltopManager private constructor(context: Context) {
         initJob?.cancel()
         pingPongStep = 1
         initJob = scope.launch(Dispatchers.IO) {
-            Log.i(TAG, "[btsnoop_hci.log 1:1 FINAL] Step 1: Sending 1-byte 0xFA startRead (0x80)...")
-            sendAppProtocolCommand("0xFA (startRead)", 0xFA, byteArrayOf(0x80.toByte()))
-        }
-    }
+            Log.i(TAG, "[FIREWORK FLOW] Step 1: Sending 1-byte 0xFA Pipe Opener (0x80)...")
+            sendAppProtocolCommand("0xFA (Pipe Opener)", 0xFA, byteArrayOf(0x80.toByte()))
+            delay(250)
 
-    private fun checkAndLatchIfComplete() {
-        if (_gattRearVolts.value != null && _gattFrontVolts.value != null && _gattShifterLeftVolts.value != null && _gattShifterRightVolts.value != null) {
-            isLatched = true
-            Log.i(TAG, "[RULE 2 LATCHED] All 4 GATT components captured! Freezing UI state and ignoring further RX traffic until Slide to monitor = OFF.")
-            initJob?.cancel()
-            initJob = null
+            pingPongStep = 2
+            Log.i(TAG, "[FIREWORK FLOW] Step 2: Sending read block 0 (0xFB, 00 00 51)...")
+            sendAppProtocolCommand("read block 0 (0xFB)", 0xFB, byteArrayOf(0x00, 0x00, 0x51.toByte()))
         }
     }
 
@@ -427,19 +423,11 @@ class WheeltopManager private constructor(context: Context) {
         val hexData = data.toHexString()
         Log.i(TAG, "===> [RAW RX NOTIFICATION] Len=${data.size} Hex=$hexData")
 
-        // Unmask and accumulate text ONLY for 132-byte block notifications (data.size >= 100)
+        // Read plain US-ASCII text fragment directly for 132-byte block notifications (data.size >= 100)
         if (data.size >= 100) {
             try {
-                val rawXorByte = data[1].toInt() and 0xFF
-                val xorMask = rawXorByte xor 0x32
-
-                val unmasked = ByteArray(data.size - 4)
-                for (i in 4 until data.size) {
-                    unmasked[i - 4] = (data[i].toInt() xor xorMask).toByte()
-                }
-
-                val asciiFragment = String(unmasked, Charsets.US_ASCII)
-                Log.i(TAG, "===> [ASCII BLOCK TEXT (OFFSET 4..N)]: \"$asciiFragment\"")
+                val asciiFragment = String(data, 4, data.size - 4, Charsets.US_ASCII)
+                Log.i(TAG, "===> [ASCII PLAIN TEXT (OFFSET 4..N)]: \"$asciiFragment\"")
                 asciiBuffer.append(asciiFragment)
                 val fullText = asciiBuffer.toString()
                 Log.i(TAG, "===> [SPEICHER-STAND (${asciiBuffer.length} BYTES)]: \"$fullText\"")
@@ -468,74 +456,93 @@ class WheeltopManager private constructor(context: Context) {
             val cleanKey = (if (rawKey == 0) 0x14 else (rawKey and 0x7F)).toByte()
             sessionKeyByte = cleanKey
             _isAuthenticatedState.value = true
-            Log.i(TAG, "SESSION KEY ACTIVATED: 0x%02X. Triggering 10-Byte startRead Flow...".format(cleanKey))
+            Log.i(TAG, "VALID SESSION KEY ACTIVATED: 0x%02X. Triggering FIREWORK Flow...".format(cleanKey))
             startInitializationSequence()
-        } else {
-            // Event-Driven Progression upon startRead ACK & Block Notifications
-            if (pingPongStep == 1) {
-                pingPongStep = 2
-                Log.i(TAG, "===> [0xFA startRead ACK RECEIVED!] Buffer 100ms -> Sending read block 0 (0xFB, 00 00 51)...")
-                scope.launch(Dispatchers.IO) {
-                    delay(100)
-                    sendAppProtocolCommand("read block 0 (0xFB)", 0xFB, byteArrayOf(0x00, 0x00, 0x51.toByte()))
-                }
-            } else if (pingPongStep == 2 && data.size >= 100) {
+        } else if (data.size >= 100) {
+            if (pingPongStep == 2) {
                 pingPongStep = 3
                 Log.i(TAG, "===> [BLOCK 0 RECEIVED (132 BYTES)!] Buffer 200ms -> Sending read block 1 (0xFB, 00 01 51)...")
                 scope.launch(Dispatchers.IO) {
                     delay(200)
                     sendAppProtocolCommand("read block 1 (0xFB)", 0xFB, byteArrayOf(0x00, 0x01, 0x51.toByte()))
                 }
-            } else if (pingPongStep == 3 && data.size >= 100) {
+            } else if (pingPongStep == 3) {
                 pingPongStep = 4
                 Log.i(TAG, "===> [BLOCK 1 RECEIVED (132 BYTES)!] Buffer 200ms -> Sending read block 2 (0xFB, 00 02 51)...")
                 scope.launch(Dispatchers.IO) {
                     delay(200)
                     sendAppProtocolCommand("read block 2 (0xFB)", 0xFB, byteArrayOf(0x00, 0x02, 0x51.toByte()))
                 }
-            } else if (pingPongStep == 4 && data.size >= 100) {
+            } else if (pingPongStep == 4) {
                 pingPongStep = 5
                 Log.i(TAG, "===> [BLOCK 2 RECEIVED (132 BYTES)!] Buffer 200ms -> Sending read block 3 (0xFB, 00 03 51)...")
                 scope.launch(Dispatchers.IO) {
                     delay(200)
                     sendAppProtocolCommand("read block 3 (0xFB)", 0xFB, byteArrayOf(0x00, 0x03, 0x51.toByte()))
                 }
-            } else if (pingPongStep == 5 && data.size >= 100) {
+            } else if (pingPongStep == 5) {
                 pingPongStep = 6
                 Log.i(TAG, "===> [BLOCK 3 RECEIVED (132 BYTES)!] Buffer 200ms -> Sending read block 4 (0xFB, 00 04 51)...")
                 scope.launch(Dispatchers.IO) {
                     delay(200)
                     sendAppProtocolCommand("read block 4 (0xFB)", 0xFB, byteArrayOf(0x00, 0x04, 0x51.toByte()))
                 }
-            } else if (pingPongStep == 6 && data.size >= 100) {
+            } else if (pingPongStep == 6) {
                 Log.i(TAG, "===> [BLOCK 4 RECEIVED (132 BYTES)!] ALL BLOCKS 0..4 FULLY UNLOCKED!")
             }
+        }
+
+        if (cmd == 0x88 || cmd == 0x89 || cmd == 0x98 || cmd == 0x99) {
+            parseBinaryBlockTelemetry(decoded)
         }
     }
 
     private fun parseBinaryBlockTelemetry(decoded: ByteArray) {
-        if (decoded.size < 7) return
+        if (decoded.size < 5) return
         val cmd = decoded.getOrNull(3)?.toInt()?.and(0xFF) ?: 0
 
-        // Suppress CMD 0x88 shift notifications completely
-        if (cmd == 0x88) return
-
-        if (cmd == 0x98 && decoded.size >= 8) {
+        // Parse Front Derailleur (FD) Shift Events (CMD 0x88 / 0x89)
+        if (cmd == 0x88 || cmd == 0x89) {
             val marker = (decoded.getOrNull(5)?.toInt() ?: 0) and 0xFF
-            val voltsRaw = (((decoded.getOrNull(6)?.toInt() ?: 0) and 0xFF) shl 8) or ((decoded.getOrNull(7)?.toInt() ?: 0) and 0xFF)
+            val gearPos = (decoded.getOrNull(9)?.toInt() ?: 0) and 0xFF
 
-            if (voltsRaw in 240..330) {
-                val volts = voltsRaw / 100.0f
-                if (marker == 0x4E) {
-                    _gattShifterLeftVolts.value = volts
-                    _gattShifterLeftFirmware.value = "3.26"
-                } else if (marker == 0x4F || marker == 0x50) {
-                    _gattShifterRightVolts.value = volts
-                    _gattShifterRightFirmware.value = "4.33"
+            if (decoded.size == 8) {
+                Log.i(TAG, "===> [FD SHIFT] Front Derailleur Motor Running...")
+            } else if (marker == 0x00) {
+                Log.i(TAG, "===> [FD SHIFT] Front Derailleur Shift Initiated...")
+            } else if (gearPos == 6 || gearPos == 5) {
+                Log.i(TAG, "===> [FD SHIFT] Front Derailleur Trimming / Overshifting...")
+            } else {
+                val ringName = if (gearPos == 2) "Big Chainring" else "Small Chainring"
+                Log.i(TAG, "===> [FD SHIFT COMPLETE] Front Derailleur Shifted to $ringName (Position $gearPos)")
+            }
+            return
+        }
+
+        // Parse Rear Derailleur (RD) Shift Events (CMD 0x98 / 0x99)
+        if (cmd == 0x98 || cmd == 0x99) {
+            val marker = (decoded.getOrNull(5)?.toInt() ?: 0) and 0xFF
+            val gearPos = (decoded.getOrNull(9)?.toInt() ?: 0) and 0xFF
+
+            if (decoded.size == 8 && marker != 0x4E && marker != 0x4F && marker != 0x50) {
+                Log.i(TAG, "===> [RD SHIFT] Rear Derailleur Motor Running...")
+            } else if (gearPos in 1..14) {
+                Log.i(TAG, "===> [RD SHIFT COMPLETE] Rear Derailleur Shifted to Gear $gearPos")
+            } else if (decoded.size >= 8) {
+                // Parse battery telemetry if present in 0x98 frame
+                val voltsRaw = (((decoded.getOrNull(6)?.toInt() ?: 0) and 0xFF) shl 8) or ((decoded.getOrNull(7)?.toInt() ?: 0) and 0xFF)
+                if (voltsRaw in 240..330) {
+                    val volts = voltsRaw / 100.0f
+                    if (marker == 0x4E) {
+                        _gattShifterLeftVolts.value = volts
+                        _gattShifterLeftFirmware.value = "3.26"
+                    } else if (marker == 0x4F || marker == 0x50) {
+                        _gattShifterRightVolts.value = volts
+                        _gattShifterRightFirmware.value = "4.33"
+                    }
                 }
             }
         }
-        checkAndLatchIfComplete()
     }
 
     private fun parseAsciiPowerString(text: String) {
@@ -577,7 +584,6 @@ class WheeltopManager private constructor(context: Context) {
                 }
             }
         }
-        checkAndLatchIfComplete()
     }
 
     @SuppressLint("MissingPermission")
@@ -680,5 +686,19 @@ class WheeltopManager private constructor(context: Context) {
     suspend fun sendAppProtocolCommand(name: String, commandId: Int, payload: ByteArray = byteArrayOf()): Boolean {
         val frame = buildAppFrame(commandId, payload)
         return sendRawFrame(name, frame)
+    }
+
+    fun shiftRear(direction: Int) {
+        scope.launch(Dispatchers.IO) {
+            Log.i(TAG, "[ADB SHIFT] Shifting Rear Derailleur (RD) direction: $direction")
+            sendAppProtocolCommand("Rear Shift ($direction)", 0x99, byteArrayOf(direction.toByte()))
+        }
+    }
+
+    fun toggleFrontDerailleur() {
+        scope.launch(Dispatchers.IO) {
+            Log.i(TAG, "[ADB SHIFT] Toggling Front Derailleur (FD)...")
+            sendAppProtocolCommand("Front Derailleur Toggle", 0x89, byteArrayOf(0x02.toByte()))
+        }
     }
 }

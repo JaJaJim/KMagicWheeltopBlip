@@ -22,6 +22,15 @@ class AdbTestReceiver : BroadcastReceiver() {
             "io.github.JaJaJim.karooedscharge.DISCONNECT" -> {
                 wheeltopManager.toggleMonitoring(false)
             }
+            "io.github.JaJaJim.karooedscharge.RD_SHIFT_UP" -> {
+                wheeltopManager.shiftRear(2)
+            }
+            "io.github.JaJaJim.karooedscharge.RD_SHIFT_DOWN" -> {
+                wheeltopManager.shiftRear(1)
+            }
+            "io.github.JaJaJim.karooedscharge.FD_TOGGLE" -> {
+                wheeltopManager.toggleFrontDerailleur()
+            }
         }
     }
 }

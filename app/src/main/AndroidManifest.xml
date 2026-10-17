@@ -46,6 +46,9 @@
             <intent-filter>
                 <action android:name="io.github.JaJaJim.karooedscharge.CONNECT" />
                 <action android:name="io.github.JaJaJim.karooedscharge.DISCONNECT" />
+                <action android:name="io.github.JaJaJim.karooedscharge.RD_SHIFT_UP" />
+                <action android:name="io.github.JaJaJim.karooedscharge.RD_SHIFT_DOWN" />
+                <action android:name="io.github.JaJaJim.karooedscharge.FD_TOGGLE" />
             </intent-filter>
         </receiver>
 
