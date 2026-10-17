@@ -1,5 +1,6 @@
 package io.github.JaJaJim.kmagicwheeltopblip.service
 
+import io.github.JaJaJim.kmagicwheeltopblip.BuildConfig
 import io.github.JaJaJim.kmagicwheeltopblip.ble.WheeltopManager
 import io.hammerhead.karooext.extension.DataTypeImpl
 import io.hammerhead.karooext.extension.KarooExtension
@@ -13,7 +14,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 
-class KarooEdsChargeExtensionService : KarooExtension("kmagic-wheeltop-blip", "0.0.1") {
+class KarooEdsChargeExtensionService : KarooExtension("kmagic-wheeltop-blip", BuildConfig.VERSION_NAME) {
 
     companion object {
         const val EXTENSION_ID = "kmagic-wheeltop-blip"
