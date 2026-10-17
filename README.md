@@ -2,7 +2,7 @@
 
 A Hammerhead Karoo 2 / Karoo 3 extension and standalone BLE control suite for **WheelTop EDS (TX, OX, GX, GeX)** electronic shifting systems and **Magicshine M0-C0 MJ_6558** wireless handlebar blip remotes.
 
-Designed following Modern Android Development (MAD) Reactive Architecture for live battery voltage monitoring, remote shifting control, and custom data field integration on Hammerhead Karoo and open Android bike computers.
+This project is a new, native Android/Karoo (partial) re-implementation based on [drJeckyll's EDS-OX project](https://git.jeckyll.net/published/personal/eds-ox), specifically designed as a native Hammerhead Karoo extension to bring WheelTop electronic derailleur telemetry and Magicshine remote control directly to your handlebar.
 
 ---
 
@@ -18,15 +18,29 @@ Designed following Modern Android Development (MAD) Reactive Architecture for li
 > **ℹ️ PROJECT STATUS & FUTURE ROADMAP**
 >
 > - **Initial Release / Proof of Concept:** This software is currently an early **Preview / Proof of Concept (PoC)**.
-> - **Functional Scope:** The current ADB and control scope is **not nearly as fully implemented** as in the reference implementation ([eds-ox by drJeckyll](https://git.jeckyll.net/published/personal/eds-ox)).
+> - **Functional Scope:** The current ADB and control scope is a partial native Karoo implementation based on the reference implementation ([eds-ox by drJeckyll](https://git.jeckyll.net/published/personal/eds-ox)).
 > - **Planned Driver Architecture:** In a future release, this project is planned to be refactored into an independent, modular **WheelTop "Driver"** for Karoo/Android that will offer an open interface for connecting third-party extensions.
+
+---
+
+> [!NOTE]
+> **🚲 TESTED HARDWARE DISCLAIMER**
+>
+> - **WheelTop EDS TX Only:** This extension has so far only been tested on a **WheelTop EDS TX** shifting system. Compatibility with EDS OX, GX, and GeX models is based on shared protocol specifications but has not yet been physically verified.
+
+---
+
+> [!TIP]
+> **🛒 MAGICSHINE BLIP REMOTE CONTROL**
+>
+> - **Acquisition:** The wireless handlebar blip remote can be acquired for ~$20 directly from [Magicshine (MJ-6558 Remote Control)](https://magicshine.com/products/mj-6558-remote-control) or comes bundled with certain Magicshine headlight/taillight models.
 
 ---
 
 > [!WARNING]
 > **⚡ KNOWN ISSUES & USAGE NOTES**
 >
-> - **Connection Stability / Reconnect:** BLE connection establishment can currently be a bit **buggy** and may require multiple attempts, especially after a disconnect/reconnect cycle or after longer idle pauses between sessions.
+> - **Connection Stability / Reconnect:** BLE connection establishment is backed by a continuous 5-second auto-reconnect watchdog with a 2-second Qualcomm stack quiet period to ensure reliable GATT connection.
 
 ---
 
