@@ -381,7 +381,7 @@ private fun RemoteCard(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
-                    text = "Slide to bind",
+                    text = if (isBound) "Slide to unbind" else "Slide to bind",
                     fontSize = 14.sp,
                     fontWeight = FontWeight.Medium,
                     color = Color(0xFF1E1B2E)
@@ -601,7 +601,7 @@ private fun GattMasterCard(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
-                    text = "Slide to connect",
+                    text = if (isMonitored) "Slide to disconnect" else "Slide to connect",
                     fontSize = 14.sp,
                     fontWeight = FontWeight.Medium,
                     color = Color(0xFF1E1B2E)
