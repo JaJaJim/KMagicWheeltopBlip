@@ -13,10 +13,10 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 
-class KarooEdsChargeExtensionService : KarooExtension("karoo-eds-charge", "0.0.1") {
+class KarooEdsChargeExtensionService : KarooExtension("kmagic-wheeltop-blip", "0.0.1") {
 
     companion object {
-        const val EXTENSION_ID = "karoo-eds-charge"
+        const val EXTENSION_ID = "kmagic-wheeltop-blip"
         const val REAR_BATTERY_TYPE_ID = "wheeltop-rear-battery"
         const val FRONT_BATTERY_TYPE_ID = "wheeltop-front-battery"
     }

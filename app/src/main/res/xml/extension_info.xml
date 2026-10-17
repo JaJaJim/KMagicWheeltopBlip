@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <extension
-    id="karoo-eds-charge"
+    id="kmagic-wheeltop-blip"
     displayName="KMagicWheeltopBlip"
     icon="@drawable/ic_logo">
     <data-type
