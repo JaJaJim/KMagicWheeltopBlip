@@ -1,6 +1,6 @@
-package io.github.JaJaJim.karooedscharge.service
+package io.github.JaJaJim.kmagicwheeltopblip.service
 
-import io.github.JaJaJim.karooedscharge.ble.WheeltopManager
+import io.github.JaJaJim.kmagicwheeltopblip.ble.WheeltopManager
 import io.hammerhead.karooext.extension.DataTypeImpl
 import io.hammerhead.karooext.extension.KarooExtension
 import io.hammerhead.karooext.internal.Emitter

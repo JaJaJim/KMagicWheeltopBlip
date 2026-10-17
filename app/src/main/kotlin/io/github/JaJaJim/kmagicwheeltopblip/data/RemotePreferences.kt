@@ -1,4 +1,4 @@
-package io.github.JaJaJim.karooedscharge.data
+package io.github.JaJaJim.kmagicwheeltopblip.data
 
 import android.content.Context
 import androidx.datastore.core.DataStore
@@ -10,7 +10,7 @@ import androidx.datastore.preferences.preferencesDataStore
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 
-private val Context.dataStore: DataStore<Preferences> by preferencesDataStore(name = "karoo_eds_charge_settings")
+private val Context.dataStore: DataStore<Preferences> by preferencesDataStore(name = "kmagic_wheeltop_blip_settings")
 
 class RemotePreferences(private val context: Context) {
 

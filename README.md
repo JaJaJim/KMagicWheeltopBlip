@@ -47,51 +47,51 @@ Users can interact directly with their WheelTop derailleur and Magicshine Blip R
 If you want to connect to a specific WheelTop derailleur MAC address via ADB, pass your device's MAC address with `--es mac`:
 
 ```powershell
-adb shell am broadcast -a io.github.JaJaJim.karooedscharge.CONNECT -p io.github.JaJaJim.karooedscharge --es mac "D4:85:A1:BE:24:3B"
+adb shell am broadcast -a io.github.JaJaJim.kmagicwheeltopblip.CONNECT -p io.github.JaJaJim.kmagicwheeltopblip --es mac "D4:85:A1:BE:24:3B"
 ```
 *(Replace `D4:85:A1:BE:24:3B` with your WheelTop derailleur's Bluetooth MAC address).*
 
 ### 2. Disconnecting
 ```powershell
-adb shell am broadcast -a io.github.JaJaJim.karooedscharge.DISCONNECT -p io.github.JaJaJim.karooedscharge
+adb shell am broadcast -a io.github.JaJaJim.kmagicwheeltopblip.DISCONNECT -p io.github.JaJaJim.kmagicwheeltopblip
 ```
 
 ### 3. Binding & Unbinding Magicshine Remote
 - **Bind Remote MAC Address**:
   ```powershell
-  adb shell am broadcast -a io.github.JaJaJim.karooedscharge.BIND_REMOTE -p io.github.JaJaJim.karooedscharge --es mac "60:03:00:08:CC:77"
+  adb shell am broadcast -a io.github.JaJaJim.kmagicwheeltopblip.BIND_REMOTE -p io.github.JaJaJim.kmagicwheeltopblip --es mac "60:03:00:08:CC:77"
   ```
 - **Unbind & Reset Remote**:
   ```powershell
-  adb shell am broadcast -a io.github.JaJaJim.karooedscharge.UNBIND_REMOTE -p io.github.JaJaJim.karooedscharge
+  adb shell am broadcast -a io.github.JaJaJim.kmagicwheeltopblip.UNBIND_REMOTE -p io.github.JaJaJim.kmagicwheeltopblip
   ```
 
 ### 4. Direct Shifting Commands over BLE
 - **Rear Shift UP** (shifts outwards to a smaller cog / faster gear):
   ```powershell
-  adb shell am broadcast -a io.github.JaJaJim.karooedscharge.RD_SHIFT_UP -p io.github.JaJaJim.karooedscharge
+  adb shell am broadcast -a io.github.JaJaJim.kmagicwheeltopblip.RD_SHIFT_UP -p io.github.JaJaJim.kmagicwheeltopblip
   ```
 - **Rear Shift DOWN** (shifts inwards to a larger cog / lighter gear):
   ```powershell
-  adb shell am broadcast -a io.github.JaJaJim.karooedscharge.RD_SHIFT_DOWN -p io.github.JaJaJim.karooedscharge
+  adb shell am broadcast -a io.github.JaJaJim.kmagicwheeltopblip.RD_SHIFT_DOWN -p io.github.JaJaJim.kmagicwheeltopblip
   ```
 - **Front Derailleur Toggle** (switches chainring between Big & Small):
   ```powershell
-  adb shell am broadcast -a io.github.JaJaJim.karooedscharge.FD_TOGGLE -p io.github.JaJaJim.karooedscharge
+  adb shell am broadcast -a io.github.JaJaJim.kmagicwheeltopblip.FD_TOGGLE -p io.github.JaJaJim.kmagicwheeltopblip
   ```
 
 ### 5. Simulating Magicshine Blip Remote Clicks
 - **Square Button [□] Single Click**:
   ```powershell
-  adb shell am broadcast -a io.github.JaJaJim.karooedscharge.REMOTE_SQUARE -p io.github.JaJaJim.karooedscharge
+  adb shell am broadcast -a io.github.JaJaJim.kmagicwheeltopblip.REMOTE_SQUARE -p io.github.JaJaJim.kmagicwheeltopblip
   ```
 - **Circle Button [○] Single Click**:
   ```powershell
-  adb shell am broadcast -a io.github.JaJaJim.karooedscharge.REMOTE_CIRCLE -p io.github.JaJaJim.karooedscharge
+  adb shell am broadcast -a io.github.JaJaJim.kmagicwheeltopblip.REMOTE_CIRCLE -p io.github.JaJaJim.kmagicwheeltopblip
   ```
 - **Double Click [□ / ○]**:
   ```powershell
-  adb shell am broadcast -a io.github.JaJaJim.karooedscharge.REMOTE_DOUBLE_CLICK -p io.github.JaJaJim.karooedscharge
+  adb shell am broadcast -a io.github.JaJaJim.kmagicwheeltopblip.REMOTE_DOUBLE_CLICK -p io.github.JaJaJim.kmagicwheeltopblip
   ```
 
 ### 6. Live Telemetry & Shift Monitoring via ADB Logcat

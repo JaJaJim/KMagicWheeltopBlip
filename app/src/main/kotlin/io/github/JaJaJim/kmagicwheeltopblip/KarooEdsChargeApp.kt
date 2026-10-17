@@ -1,4 +1,4 @@
-package io.github.JaJaJim.karooedscharge
+package io.github.JaJaJim.kmagicwheeltopblip
 
 import android.app.Application
 import timber.log.Timber

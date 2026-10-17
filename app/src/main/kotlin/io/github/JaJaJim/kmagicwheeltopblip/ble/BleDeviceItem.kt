@@ -1,4 +1,4 @@
-package io.github.JaJaJim.karooedscharge.ble
+package io.github.JaJaJim.kmagicwheeltopblip.ble
 
 data class BleDeviceItem(
     val name: String,

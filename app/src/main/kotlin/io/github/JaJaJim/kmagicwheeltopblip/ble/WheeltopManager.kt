@@ -1,6 +1,6 @@
 @file:OptIn(ExperimentalStdlibApi::class)
 
-package io.github.JaJaJim.karooedscharge.ble
+package io.github.JaJaJim.kmagicwheeltopblip.ble
 
 import android.annotation.SuppressLint
 import android.bluetooth.BluetoothAdapter
@@ -14,7 +14,7 @@ import android.bluetooth.BluetoothProfile
 import android.content.Context
 import android.os.Build
 import android.util.Log
-import io.github.JaJaJim.karooedscharge.data.RemotePreferences
+import io.github.JaJaJim.kmagicwheeltopblip.data.RemotePreferences
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job

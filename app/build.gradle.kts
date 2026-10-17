@@ -5,11 +5,11 @@ plugins {
 }
 
 android {
-    namespace = "io.github.JaJaJim.karooedscharge"
+    namespace = "io.github.JaJaJim.kmagicwheeltopblip"
     compileSdk = 34
 
     defaultConfig {
-        applicationId = "io.github.JaJaJim.karooedscharge"
+        applicationId = "io.github.JaJaJim.kmagicwheeltopblip"
         minSdk = 26
         targetSdk = 34
         versionCode = 3
