@@ -568,7 +568,7 @@ class WheeltopManager private constructor(context: Context) {
             } else if (pingPongStep == 6) {
                 connectTimeoutJob?.cancel()
                 connectTimeoutJob = null
-                _blockStatusText.value = "Blocks 0..4 Unlocked"
+                _blockStatusText.value = "Ready"
                 Log.i(TAG, "===> [BLOCK 4 RECEIVED (132 BYTES)!] ALL BLOCKS 0..4 FULLY UNLOCKED!")
 
                 val fullAscii = asciiBuffer.toString()
