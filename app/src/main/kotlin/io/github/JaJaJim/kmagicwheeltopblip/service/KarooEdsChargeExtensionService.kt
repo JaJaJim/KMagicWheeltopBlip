@@ -103,7 +103,7 @@ class KarooEdsChargeExtensionService : KarooExtension("kmagic-wheeltop-blip", Bu
                 }.collectLatest { (asciiText, blockStatus, isPulling, boundMac) ->
                     val remoteViews = RemoteViews(context.packageName, R.layout.wheeltop_widget_view)
 
-                    // Touch Click-Sensitivity (Tap Widget to Refresh)
+                    // Touch Click-Sensitivity on all child views
                     val clickIntent = Intent("io.github.JaJaJim.kmagicwheeltopblip.WIDGET_CLICK").apply {
                         setPackage(context.packageName)
                     }
@@ -114,6 +114,14 @@ class KarooEdsChargeExtensionService : KarooExtension("kmagic-wheeltop-blip", Bu
                         PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
                     )
                     remoteViews.setOnClickPendingIntent(R.id.widget_container, pendingIntent)
+                    remoteViews.setOnClickPendingIntent(R.id.row_top, pendingIntent)
+                    remoteViews.setOnClickPendingIntent(R.id.row_bottom, pendingIntent)
+                    remoteViews.setOnClickPendingIntent(R.id.txt_top_left, pendingIntent)
+                    remoteViews.setOnClickPendingIntent(R.id.txt_top_right, pendingIntent)
+                    remoteViews.setOnClickPendingIntent(R.id.txt_top_center, pendingIntent)
+                    remoteViews.setOnClickPendingIntent(R.id.txt_bottom_left, pendingIntent)
+                    remoteViews.setOnClickPendingIntent(R.id.txt_bottom_right, pendingIntent)
+                    remoteViews.setOnClickPendingIntent(R.id.txt_bottom_center, pendingIntent)
 
                     if (!asciiText.isNullOrBlank()) {
                         val parsedMap = parseAsciiMap(asciiText)
