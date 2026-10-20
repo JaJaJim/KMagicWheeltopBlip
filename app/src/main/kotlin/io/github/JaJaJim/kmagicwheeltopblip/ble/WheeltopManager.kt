@@ -305,14 +305,20 @@ class WheeltopManager private constructor(context: Context) {
             delay(8_000) // 8-second hard safety timeout
             if (_isPullingGattBlocks.value && pingPongStep < 6) {
                 Log.w(TAG, "[PULL ATTEMPT $pullRetryCount/5 TIMED OUT] Performing 2s modem cooldown & retrying...")
+                val currentMac = mac
                 disconnectGatt()
-                delay(2000) // 2s Qualcomm modem quiet cooldown
-                if (_isPullingGattBlocks.value && pullRetryCount < 5) {
-                    executePullAttempt(mac)
-                } else {
-                    Log.e(TAG, "===> [PULL GATT BLOCKS FAILED] All 5 attempts exhausted.")
-                    _isPullingGattBlocks.value = false
-                    _blockStatusText.value = "Connection Failed"
+
+                scope.launch(Dispatchers.IO) {
+                    delay(2000) // 2s Qualcomm modem quiet cooldown
+                    if (_isPullingGattBlocks.value) {
+                        if (pullRetryCount < 5) {
+                            executePullAttempt(currentMac)
+                        } else {
+                            Log.e(TAG, "===> [PULL GATT BLOCKS FAILED] All 5 attempts exhausted.")
+                            _isPullingGattBlocks.value = false
+                            _blockStatusText.value = "Connection Failed"
+                        }
+                    }
                 }
             }
         }
