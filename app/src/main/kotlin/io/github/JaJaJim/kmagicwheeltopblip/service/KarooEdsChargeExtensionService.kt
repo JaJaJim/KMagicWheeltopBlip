@@ -123,7 +123,21 @@ class KarooEdsChargeExtensionService : KarooExtension("kmagic-wheeltop-blip", Bu
                     remoteViews.setOnClickPendingIntent(R.id.txt_bottom_right, pendingIntent)
                     remoteViews.setOnClickPendingIntent(R.id.txt_bottom_center, pendingIntent)
 
-                    if (!asciiText.isNullOrBlank()) {
+                    if (isPulling) {
+                        // Live Progress Mode during active GATT Block Pull
+                        val progressText = if (!blockStatus.isNullOrBlank()) blockStatus else "Syncing..."
+
+                        remoteViews.setViewVisibility(R.id.txt_top_left, View.GONE)
+                        remoteViews.setViewVisibility(R.id.txt_top_right, View.GONE)
+                        remoteViews.setViewVisibility(R.id.txt_top_center, View.VISIBLE)
+
+                        remoteViews.setViewVisibility(R.id.txt_bottom_left, View.GONE)
+                        remoteViews.setViewVisibility(R.id.txt_bottom_right, View.GONE)
+                        remoteViews.setViewVisibility(R.id.txt_bottom_center, View.VISIBLE)
+
+                        remoteViews.setTextViewText(R.id.txt_top_center, "WheelTop")
+                        remoteViews.setTextViewText(R.id.txt_bottom_center, progressText)
+                    } else if (!asciiText.isNullOrBlank()) {
                         val parsedMap = parseAsciiMap(asciiText)
                         val boundName = wheeltopManager.boundDeviceName.value ?: "EDS TX"
                         val isOx = boundName.contains("OX", ignoreCase = true) || parsedMap.containsKey("POWER_1")
@@ -182,7 +196,6 @@ class KarooEdsChargeExtensionService : KarooExtension("kmagic-wheeltop-blip", Bu
                         // Reason Status Messages
                         val reasonText = when {
                             boundMac.isNullOrBlank() -> "No Derailleur Bound"
-                            isPulling -> "Syncing..."
                             blockStatus == "Pull Timed Out / Try Again" -> "Connection Failed"
                             blockStatus != null && blockStatus.contains("Failed", ignoreCase = true) -> "Block Read Failed"
                             else -> "Tap to Sync"
