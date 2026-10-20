@@ -1,12 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
-<extension
-    id="kmagic-wheeltop-blip"
+<ExtensionInfo
     displayName="KMagicWheeltopBlip"
-    icon="@drawable/ic_logo">
-    <data-type
-        typeId="wheeltop-rear-battery"
-        displayName="Rear Battery" />
-    <data-type
-        typeId="wheeltop-front-battery"
-        displayName="Front Battery" />
-</extension>
+    description="WheelTop EDS &amp; Magicshine Remote Extension"
+    icon="@drawable/ic_logo"
+    id="kmagic-wheeltop-blip">
+</ExtensionInfo>
