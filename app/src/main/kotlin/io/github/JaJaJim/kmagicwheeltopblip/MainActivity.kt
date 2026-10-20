@@ -48,7 +48,6 @@ import io.github.JaJaJim.kmagicwheeltopblip.ble.BleDeviceItem
 import io.github.JaJaJim.kmagicwheeltopblip.ble.ConnectionState
 import io.github.JaJaJim.kmagicwheeltopblip.ble.MagicshineRemoteManager
 import io.github.JaJaJim.kmagicwheeltopblip.ble.WheeltopManager
-import java.util.Locale
 
 class MainActivity : ComponentActivity() {
 
@@ -113,16 +112,6 @@ fun EdsChargeLightScreen(wheeltopManager: WheeltopManager, remoteManager: Magics
     val lastClickText by remoteManager.lastClickText.collectAsState()
     val doubleClickMode by remoteManager.doubleClickMode.collectAsState()
 
-    val gattRearVolts by wheeltopManager.gattRearVolts.collectAsState()
-    val gattFrontVolts by wheeltopManager.gattFrontVolts.collectAsState()
-    val gattShifterRightVolts by wheeltopManager.gattShifterRightVolts.collectAsState()
-    val gattShifterLeftVolts by wheeltopManager.gattShifterLeftVolts.collectAsState()
-
-    val gattRearFirmware by wheeltopManager.gattRearFirmware.collectAsState()
-    val gattFrontFirmware by wheeltopManager.gattFrontFirmware.collectAsState()
-    val gattShifterRightFirmware by wheeltopManager.gattShifterRightFirmware.collectAsState()
-    val gattShifterLeftFirmware by wheeltopManager.gattShifterLeftFirmware.collectAsState()
-
     val blockParameters by wheeltopManager.blockParameters.collectAsState()
     val blockStatusText by wheeltopManager.blockStatusText.collectAsState()
 
@@ -141,8 +130,6 @@ fun EdsChargeLightScreen(wheeltopManager: WheeltopManager, remoteManager: Magics
     }
 
     val modelName = boundName ?: "EDS TX"
-    val isOxModel = modelName.contains("OX", ignoreCase = true)
-    val isGxModel = modelName.contains("GX", ignoreCase = true) || modelName.contains("GEX", ignoreCase = true)
 
     // Auto-scan for remotes if no remote is bound
     LaunchedEffect(boundRemoteMac) {
@@ -201,16 +188,6 @@ fun EdsChargeLightScreen(wheeltopManager: WheeltopManager, remoteManager: Magics
                 deviceName = modelName,
                 statusText = statusText,
                 isMonitored = isMonitored,
-                isOxModel = isOxModel,
-                isGxModel = isGxModel,
-                gattRearVolts = gattRearVolts,
-                gattFrontVolts = gattFrontVolts,
-                gattShifterRightVolts = gattShifterRightVolts,
-                gattShifterLeftVolts = gattShifterLeftVolts,
-                gattRearFirmware = gattRearFirmware,
-                gattFrontFirmware = gattFrontFirmware,
-                gattShifterRightFirmware = gattShifterRightFirmware,
-                gattShifterLeftFirmware = gattShifterLeftFirmware,
                 blockParameters = blockParameters,
                 blockStatusText = blockStatusText,
                 onMonitoredChange = { enabled ->
@@ -462,16 +439,6 @@ private fun GattMasterCard(
     deviceName: String,
     statusText: String,
     isMonitored: Boolean,
-    isOxModel: Boolean,
-    isGxModel: Boolean,
-    gattRearVolts: Float?,
-    gattFrontVolts: Float?,
-    gattShifterRightVolts: Float?,
-    gattShifterLeftVolts: Float?,
-    gattRearFirmware: String?,
-    gattFrontFirmware: String?,
-    gattShifterRightFirmware: String?,
-    gattShifterLeftFirmware: String?,
     blockParameters: Map<String, String>,
     blockStatusText: String?,
     onMonitoredChange: (Boolean) -> Unit
@@ -499,25 +466,6 @@ private fun GattMasterCard(
             )
 
             if (isMonitored) {
-                Spacer(modifier = Modifier.height(10.dp))
-
-                // Rear Derailleur present on ALL models
-                VoltageLine(label = "Rear Derailleur", volts = gattRearVolts, firmware = gattRearFirmware)
-
-                if (!isOxModel && !isGxModel) {
-                    // Front Derailleur present on EDS TX only
-                    VoltageLine(label = "Front Derailleur", volts = gattFrontVolts, firmware = gattFrontFirmware)
-                }
-
-                if (isOxModel) {
-                    // EDS OX has 1 Remote Shifter
-                    VoltageLine(label = "Remote Shifter", volts = gattShifterLeftVolts, firmware = gattShifterLeftFirmware)
-                } else {
-                    // EDS TX and GX have 2 Shifters
-                    VoltageLine(label = "Shifter Right", volts = gattShifterRightVolts, firmware = gattShifterRightFirmware)
-                    VoltageLine(label = "Shifter Left", volts = gattShifterLeftVolts, firmware = gattShifterLeftFirmware)
-                }
-
                 // --- BLOCK 0..4 TELEMETRY & PARAMETERS ---
                 Spacer(modifier = Modifier.height(10.dp))
 
@@ -618,47 +566,6 @@ private fun GattMasterCard(
                     )
                 )
             }
-        }
-    }
-}
-
-@Composable
-private fun VoltageLine(label: String, volts: Float?, firmware: String?) {
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(vertical = 2.dp)
-    ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Text(
-                text = label,
-                fontSize = 13.sp,
-                color = Color(0xFF333333)
-            )
-            Text(
-                text = if (volts != null) "%.2f V".format(Locale.US, volts) else "-- V",
-                fontSize = 13.sp,
-                fontWeight = FontWeight.Bold,
-                color = when {
-                    volts == null -> Color(0xFF777777)
-                    volts >= 7.2f -> Color(0xFF006644)
-                    volts >= 2.7f -> Color(0xFF006644)
-                    else -> Color(0xFFB91C1C)
-                }
-            )
-        }
-        if (firmware != null) {
-            Text(
-                text = "FW: v$firmware",
-                fontSize = 10.sp,
-                fontWeight = FontWeight.Medium,
-                color = Color(0xFF5E546E),
-                modifier = Modifier.padding(start = 4.dp)
-            )
         }
     }
 }
