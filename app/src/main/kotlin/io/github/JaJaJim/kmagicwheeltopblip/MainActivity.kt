@@ -39,6 +39,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -112,7 +113,7 @@ fun EdsChargeLightScreen(wheeltopManager: WheeltopManager, remoteManager: Magics
     val lastClickText by remoteManager.lastClickText.collectAsState()
     val doubleClickMode by remoteManager.doubleClickMode.collectAsState()
 
-    val blockParameters by wheeltopManager.blockParameters.collectAsState()
+    val rawBlockText by wheeltopManager.rawBlockText.collectAsState()
     val blockStatusText by wheeltopManager.blockStatusText.collectAsState()
 
     val statusText = when {
@@ -188,7 +189,7 @@ fun EdsChargeLightScreen(wheeltopManager: WheeltopManager, remoteManager: Magics
                 deviceName = modelName,
                 statusText = statusText,
                 isMonitored = isMonitored,
-                blockParameters = blockParameters,
+                rawBlockText = rawBlockText,
                 blockStatusText = blockStatusText,
                 onMonitoredChange = { enabled ->
                     val mac = if (boundMac.isNullOrBlank()) "D4:85:A1:BE:24:3B" else boundMac!!
@@ -439,7 +440,7 @@ private fun GattMasterCard(
     deviceName: String,
     statusText: String,
     isMonitored: Boolean,
-    blockParameters: Map<String, String>,
+    rawBlockText: String,
     blockStatusText: String?,
     onMonitoredChange: (Boolean) -> Unit
 ) {
@@ -499,44 +500,18 @@ private fun GattMasterCard(
 
                 Spacer(modifier = Modifier.height(6.dp))
 
-                if (blockParameters.isNotEmpty()) {
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .background(Color(0x1A000000), shape = RoundedCornerShape(8.dp))
-                            .padding(8.dp)
-                    ) {
-                        blockParameters.forEach { (key, value) ->
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(vertical = 2.dp),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.Top
-                            ) {
-                                Text(
-                                    text = key,
-                                    fontSize = 11.sp,
-                                    fontWeight = FontWeight.SemiBold,
-                                    color = Color(0xFF332F4C),
-                                    modifier = Modifier.weight(1f)
-                                )
-                                Text(
-                                    text = value,
-                                    fontSize = 11.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = Color(0xFF1E1B2E),
-                                    textAlign = TextAlign.End,
-                                    modifier = Modifier.weight(1.2f)
-                                )
-                            }
-                        }
-                    }
-                } else {
+                val displayText = if (rawBlockText.isNotBlank()) rawBlockText else "Waiting for Block 0..4 response..."
+                Surface(
+                    modifier = Modifier.fillMaxWidth(),
+                    color = Color(0x1A000000),
+                    shape = RoundedCornerShape(8.dp)
+                ) {
                     Text(
-                        text = "Waiting for Block 0..4 response...",
-                        fontSize = 11.sp,
-                        color = Color(0xFF777777)
+                        text = displayText,
+                        fontSize = 10.sp,
+                        fontFamily = FontFamily.Monospace,
+                        color = Color(0xFF1E1B2E),
+                        modifier = Modifier.padding(8.dp)
                     )
                 }
             }
