@@ -130,7 +130,10 @@ class MagicshineRemoteManager private constructor(private val appContext: Contex
 
         scope.launch(Dispatchers.Main) {
             try {
-                scanner.startScan(callback)
+                val settings = ScanSettings.Builder()
+                    .setScanMode(ScanSettings.SCAN_MODE_BALANCED)
+                    .build()
+                scanner.startScan(null, settings, callback)
                 delay(30_000)
                 stopScanForRemotes()
             } catch (e: Exception) {

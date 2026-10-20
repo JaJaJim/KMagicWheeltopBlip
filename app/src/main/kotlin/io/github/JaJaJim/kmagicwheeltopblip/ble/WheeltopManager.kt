@@ -187,7 +187,10 @@ class WheeltopManager private constructor(context: Context) {
 
         scope.launch(Dispatchers.Main) {
             try {
-                scanner.startScan(callback)
+                val settings = android.bluetooth.le.ScanSettings.Builder()
+                    .setScanMode(android.bluetooth.le.ScanSettings.SCAN_MODE_BALANCED)
+                    .build()
+                scanner.startScan(null, settings, callback)
                 delay(30_000)
                 stopScanForWheeltopDevices()
             } catch (e: Exception) {
