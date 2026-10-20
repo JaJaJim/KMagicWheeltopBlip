@@ -12,6 +12,7 @@ import android.bluetooth.BluetoothGattDescriptor
 import android.bluetooth.BluetoothManager
 import android.bluetooth.BluetoothProfile
 import android.content.Context
+import android.os.Build
 import android.util.Log
 import io.github.JaJaJim.kmagicwheeltopblip.data.RemotePreferences
 import kotlinx.coroutines.CoroutineScope
@@ -63,7 +64,6 @@ class WheeltopManager private constructor(context: Context) {
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
     private val remotePreferences = RemotePreferences(appContext)
-    private val remoteManager by lazy { MagicshineRemoteManager.getInstance(appContext) }
 
     private val bluetoothManager = appContext.getSystemService(Context.BLUETOOTH_SERVICE) as? BluetoothManager
     private val bluetoothAdapter: BluetoothAdapter? get() = bluetoothManager?.adapter
@@ -99,6 +99,32 @@ class WheeltopManager private constructor(context: Context) {
 
     private val _isMonitored = MutableStateFlow(false)
     val isMonitored: StateFlow<Boolean> = _isMonitored.asStateFlow()
+
+    // GATT Master Voltage StateFlows
+    private val _gattRearVolts = MutableStateFlow<Float?>(null)
+    val gattRearVolts: StateFlow<Float?> = _gattRearVolts.asStateFlow()
+
+    private val _gattFrontVolts = MutableStateFlow<Float?>(null)
+    val gattFrontVolts: StateFlow<Float?> = _gattFrontVolts.asStateFlow()
+
+    private val _gattShifterRightVolts = MutableStateFlow<Float?>(null)
+    val gattShifterRightVolts: StateFlow<Float?> = _gattShifterRightVolts.asStateFlow()
+
+    private val _gattShifterLeftVolts = MutableStateFlow<Float?>(null)
+    val gattShifterLeftVolts: StateFlow<Float?> = _gattShifterLeftVolts.asStateFlow()
+
+    // GATT Master Firmware StateFlows
+    private val _gattRearFirmware = MutableStateFlow<String?>(null)
+    val gattRearFirmware: StateFlow<String?> = _gattRearFirmware.asStateFlow()
+
+    private val _gattFrontFirmware = MutableStateFlow<String?>(null)
+    val gattFrontFirmware: StateFlow<String?> = _gattFrontFirmware.asStateFlow()
+
+    private val _gattShifterRightFirmware = MutableStateFlow<String?>(null)
+    val gattShifterRightFirmware: StateFlow<String?> = _gattShifterRightFirmware.asStateFlow()
+
+    private val _gattShifterLeftFirmware = MutableStateFlow<String?>(null)
+    val gattShifterLeftFirmware: StateFlow<String?> = _gattShifterLeftFirmware.asStateFlow()
 
     private val _currentRssi = MutableStateFlow<Int?>(null)
     val currentRssi: StateFlow<Int?> = _currentRssi.asStateFlow()
@@ -159,6 +185,10 @@ class WheeltopManager private constructor(context: Context) {
                 Log.i(TAG, "[RULE 4] toggleMonitoring(false) -> Executing 4ms Disconnect Release")
                 disconnectGatt()
                 _connectionState.value = ConnectionState.DISCONNECTED
+                _gattRearVolts.value = null
+                _gattFrontVolts.value = null
+                _gattShifterRightVolts.value = null
+                _gattShifterLeftVolts.value = null
             }
         }
     }
@@ -325,14 +355,11 @@ class WheeltopManager private constructor(context: Context) {
             Log.i(TAG, "onConnectionStateChange: status=$status, newState=$newState")
 
             if (status != BluetoothGatt.GATT_SUCCESS || newState != BluetoothProfile.STATE_CONNECTED) {
-                Log.w(TAG, "onConnectionStateChange status=$status, newState=$newState. Scheduling self-healing auto-reconnect with 500ms quiet period...")
-                disconnectGatt()
-                scope.launch(Dispatchers.Main) {
-                    delay(500)
-                    val boundMac = _boundMacAddress.value
-                    if (_isMonitored.value && !boundMac.isNullOrBlank()) {
-                        connectToBoundDevice(boundMac)
-                    }
+                Log.w(TAG, "onConnectionStateChange status=$status, newState=$newState. Triggering self-healing auto-reconnect...")
+                if (_isMonitored.value) {
+                    triggerAutoReconnect()
+                } else {
+                    disconnectGatt()
                 }
                 return
             }
@@ -448,13 +475,13 @@ class WheeltopManager private constructor(context: Context) {
         _blockStatusText.value = "Authenticating..."
         initJob = scope.launch(Dispatchers.IO) {
             Log.i(TAG, "[FIREWORK FLOW] Step 1: Sending 1-byte 0xFA Pipe Opener (0x80)...")
-            sendAppProtocolCommand("0xFA (Pipe Opener)", 0xFA.toByte(), byteArrayOf(0x80.toByte()))
+            sendAppProtocolCommand("0xFA (Pipe Opener)", 0xFA, byteArrayOf(0x80.toByte()))
             delay(250)
 
             pingPongStep = 2
             _blockStatusText.value = "Reading Block 0 (0/5)..."
             Log.i(TAG, "[FIREWORK FLOW] Step 2: Sending read block 0 (0xFB, 00 00 51)...")
-            sendAppProtocolCommand("read block 0 (0xFB)", 0xFB.toByte(), byteArrayOf(0x00, 0x00, 0x51.toByte()))
+            sendAppProtocolCommand("read block 0 (0xFB)", 0xFB, byteArrayOf(0x00, 0x00, 0x51.toByte()))
         }
     }
 
@@ -473,6 +500,7 @@ class WheeltopManager private constructor(context: Context) {
                 val fullText = asciiBuffer.toString()
                 _rawBlockText.value = fullText
                 Log.i(TAG, "===> [SPEICHER-STAND (${asciiBuffer.length} BYTES)]: \"$fullText\"")
+                parseAsciiPowerString(fullText)
             } catch (e: Exception) {
                 Log.e(TAG, "Error parsing ASCII fragment: ${e.message}")
             }
@@ -510,7 +538,7 @@ class WheeltopManager private constructor(context: Context) {
                 Log.i(TAG, "===> [BLOCK 0 RECEIVED (132 BYTES)!] Buffer 200ms -> Sending read block 1 (0xFB, 00 01 51)...")
                 scope.launch(Dispatchers.IO) {
                     delay(200)
-                    sendAppProtocolCommand("read block 1 (0xFB)", 0xFB.toByte(), byteArrayOf(0x00, 0x01, 0x51.toByte()))
+                    sendAppProtocolCommand("read block 1 (0xFB)", 0xFB, byteArrayOf(0x00, 0x01, 0x51.toByte()))
                 }
             } else if (pingPongStep == 3) {
                 pingPongStep = 4
@@ -518,7 +546,7 @@ class WheeltopManager private constructor(context: Context) {
                 Log.i(TAG, "===> [BLOCK 1 RECEIVED (132 BYTES)!] Buffer 200ms -> Sending read block 2 (0xFB, 00 02 51)...")
                 scope.launch(Dispatchers.IO) {
                     delay(200)
-                    sendAppProtocolCommand("read block 2 (0xFB)", 0xFB.toByte(), byteArrayOf(0x00, 0x02, 0x51.toByte()))
+                    sendAppProtocolCommand("read block 2 (0xFB)", 0xFB, byteArrayOf(0x00, 0x02, 0x51.toByte()))
                 }
             } else if (pingPongStep == 4) {
                 pingPongStep = 5
@@ -526,7 +554,7 @@ class WheeltopManager private constructor(context: Context) {
                 Log.i(TAG, "===> [BLOCK 2 RECEIVED (132 BYTES)!] Buffer 200ms -> Sending read block 3 (0xFB, 00 03 51)...")
                 scope.launch(Dispatchers.IO) {
                     delay(200)
-                    sendAppProtocolCommand("read block 3 (0xFB)", 0xFB.toByte(), byteArrayOf(0x00, 0x03, 0x51.toByte()))
+                    sendAppProtocolCommand("read block 3 (0xFB)", 0xFB, byteArrayOf(0x00, 0x03, 0x51.toByte()))
                 }
             } else if (pingPongStep == 5) {
                 pingPongStep = 6
@@ -534,7 +562,7 @@ class WheeltopManager private constructor(context: Context) {
                 Log.i(TAG, "===> [BLOCK 3 RECEIVED (132 BYTES)!] Buffer 200ms -> Sending read block 4 (0xFB, 00 04 51)...")
                 scope.launch(Dispatchers.IO) {
                     delay(200)
-                    sendAppProtocolCommand("read block 4 (0xFB)", 0xFB.toByte(), byteArrayOf(0x00, 0x04, 0x51.toByte()))
+                    sendAppProtocolCommand("read block 4 (0xFB)", 0xFB, byteArrayOf(0x00, 0x04, 0x51.toByte()))
                 }
             } else if (pingPongStep == 6) {
                 _blockStatusText.value = "Blocks 0..4 Unlocked (5/5 Complete)"
@@ -551,10 +579,108 @@ class WheeltopManager private constructor(context: Context) {
         if (decoded.size < 5) return
         val cmd = decoded.getOrNull(3)?.toInt()?.and(0xFF) ?: 0
 
+        // Parse Front Derailleur (FD) Shift Events (CMD 0x88 / 0x89)
         if (cmd == 0x88 || cmd == 0x89) {
-            isShiftInProgress = false
-        } else if (cmd == 0x98 || cmd == 0x99) {
-            isShiftInProgress = false
+            val marker = (decoded.getOrNull(5)?.toInt() ?: 0) and 0xFF
+            val gearPos = (decoded.getOrNull(9)?.toInt() ?: 0) and 0xFF
+
+            if (decoded.size == 8) {
+                Log.i(TAG, "===> [FD SHIFT] Front Derailleur Motor Running...")
+            } else if (marker == 0x00) {
+                Log.i(TAG, "===> [FD SHIFT] Front Derailleur Shift Initiated...")
+            } else if (gearPos == 6 || gearPos == 5) {
+                Log.i(TAG, "===> [FD SHIFT] Front Derailleur Trimming / Overshifting...")
+            } else {
+                val ringName = if (gearPos == 2) "Big Chainring" else "Small Chainring"
+                Log.i(TAG, "===> [FD SHIFT COMPLETE] Front Derailleur Shifted to $ringName (Position $gearPos)")
+                isShiftInProgress = false
+                val currentMap = _blockParameters.value.toMutableMap()
+                currentMap["FD_POSITION"] = "$ringName (Pos $gearPos)"
+                _blockParameters.value = currentMap
+            }
+            return
+        }
+
+        // Parse Rear Derailleur (RD) Shift Events (CMD 0x98 / 0x99)
+        if (cmd == 0x98 || cmd == 0x99) {
+            val marker = (decoded.getOrNull(5)?.toInt() ?: 0) and 0xFF
+            val gearPos = (decoded.getOrNull(9)?.toInt() ?: 0) and 0xFF
+
+            if (decoded.size == 8 && marker != 0x4E && marker != 0x4F && marker != 0x50) {
+                Log.i(TAG, "===> [RD SHIFT] Rear Derailleur Motor Running...")
+            } else if (gearPos in 1..14) {
+                Log.i(TAG, "===> [RD SHIFT COMPLETE] Rear Derailleur Shifted to Gear $gearPos")
+                isShiftInProgress = false
+                val currentMap = _blockParameters.value.toMutableMap()
+                currentMap["RD_GEAR"] = "Gear $gearPos"
+                _blockParameters.value = currentMap
+            } else if (decoded.size >= 8) {
+                // Parse battery telemetry if present in 0x98 frame
+                val voltsRaw = (((decoded.getOrNull(6)?.toInt() ?: 0) and 0xFF) shl 8) or ((decoded.getOrNull(7)?.toInt() ?: 0) and 0xFF)
+                if (voltsRaw in 240..330) {
+                    val volts = voltsRaw / 100.0f
+                    if (marker == 0x4E) {
+                        _gattShifterLeftVolts.value = volts
+                        _gattShifterLeftFirmware.value = "3.26"
+                    } else if (marker == 0x4F || marker == 0x50) {
+                        _gattShifterRightVolts.value = volts
+                        _gattShifterRightFirmware.value = "4.33"
+                    }
+                }
+            }
+        }
+    }
+
+    private fun parseAsciiPowerString(text: String) {
+        val parts = text.split(",", ";", "\n", "\r")
+        val parsedMap = mutableMapOf<String, String>()
+        for (part in parts) {
+            val kv = part.split(":", "=")
+            if (kv.size == 2) {
+                val key = kv[0].trim().uppercase()
+                val valStr = kv[1].trim()
+
+                if (key.isNotEmpty() && valStr.isNotEmpty()) {
+                    parsedMap[key] = valStr
+                }
+
+                val cleanValStr = valStr.replace("V", "").trim()
+
+                when (key) {
+                    "L_VER" -> _gattShifterLeftFirmware.value = cleanValStr
+                    "L_POWER" -> cleanValStr.toFloatOrNull()?.let {
+                        val volts = if (it > 20f) it / 100.0f else it
+                        _gattShifterLeftVolts.value = volts
+                        Log.i(TAG, "Parsed WheelTop ASCII L_POWER: $volts V")
+                    }
+
+                    "R_VER" -> _gattShifterRightFirmware.value = cleanValStr
+                    "R_POWER" -> cleanValStr.toFloatOrNull()?.let {
+                        val volts = if (it > 20f) it / 100.0f else it
+                        _gattShifterRightVolts.value = volts
+                        Log.i(TAG, "Parsed WheelTop ASCII R_POWER: $volts V")
+                    }
+
+                    "Q_VER", "FD_VER" -> _gattFrontFirmware.value = cleanValStr
+                    "Q_POWER", "FD_POWER" -> cleanValStr.toFloatOrNull()?.let {
+                        val volts = if (it > 20f) it / 100.0f else it
+                        _gattFrontVolts.value = volts
+                        Log.i(TAG, "Parsed WheelTop ASCII Q_POWER: $volts V")
+                    }
+
+                    "H_VER", "RD_VER" -> _gattRearFirmware.value = cleanValStr
+                    "H_POWER", "RD_POWER" -> cleanValStr.toFloatOrNull()?.let {
+                        val volts = if (it > 20f) it / 100.0f else it
+                        _gattRearVolts.value = volts
+                        Log.i(TAG, "Parsed WheelTop ASCII H_POWER: $volts V")
+                    }
+                }
+            }
+        }
+        if (parsedMap.isNotEmpty()) {
+            val currentMap = _blockParameters.value.toMutableMap()
+            currentMap.putAll(parsedMap)
+            _blockParameters.value = currentMap
         }
     }
 
@@ -578,6 +704,7 @@ class WheeltopManager private constructor(context: Context) {
         }
     }
 
+    // Rule 5: Fire-and-Forget GATT Write with 250ms Pacing
     @SuppressLint("MissingPermission")
     private suspend fun sendRawFrame(actionName: String, bytes: ByteArray): Boolean {
         val gatt = activeGatt
@@ -593,56 +720,89 @@ class WheeltopManager private constructor(context: Context) {
 
             @Suppress("DEPRECATION")
             tx.value = bytes
-
             @Suppress("DEPRECATION")
             tx.writeType = writeType
 
+            Log.i(TAG, "[ANDROID 12 NATIVE TX] [$actionName] -> Hex: ${bytes.toHexString()}")
+
             @Suppress("DEPRECATION")
             val writeInitiated = gatt.writeCharacteristic(tx)
-            Log.i(TAG, "sendRawFrame $actionName: initiated=$writeInitiated")
-            return writeInitiated
+
+            if (!writeInitiated) {
+                Log.e(TAG, "gatt.writeCharacteristic returned false for $actionName")
+                return false
+            }
+
+            return true
         } catch (e: Exception) {
             Log.e(TAG, "Error sending $actionName: ${e.message}")
             return false
         }
     }
 
-    private suspend fun sendAppProtocolCommand(cmdName: String, cmdByte: Byte, payload: ByteArray): Boolean {
-        val frame = ByteArray(4 + payload.size)
-        frame[0] = 0xFE.toByte()
-        val rawKey = (sessionKeyByte ?: 0x29.toByte()).toInt() and 0xFF
-        val obfXor = if (rawKey == 0) 0x14 else (rawKey and 0x7F)
-        val xorKey = (obfXor + 0x32) and 0xFF
-        frame[1] = xorKey.toByte()
-        frame[2] = (payload.size + 1).toByte()
-        frame[3] = cmdByte
+    private fun buildAppFrame(commandId: Int, payload: ByteArray = byteArrayOf()): ByteArray {
+        val key = sessionKeyByte ?: 0x29.toByte()
+        val rawXorByte = 0x32.toByte()
 
+        val frameWithoutCrc = ByteArray(5 + payload.size)
+        frameWithoutCrc[0] = 0xFE.toByte()
+        frameWithoutCrc[1] = rawXorByte
+        frameWithoutCrc[2] = key
+        frameWithoutCrc[3] = commandId.toByte()
+        frameWithoutCrc[4] = payload.size.toByte()
         for (i in payload.indices) {
-            frame[4 + i] = (payload[i].toInt() xor xorKey).toByte()
+            frameWithoutCrc[5 + i] = payload[i]
         }
 
-        return sendRawFrame(cmdName, frame)
+        val crc = calculateCrc16(frameWithoutCrc)
+        val crcHigh = ((crc shr 8) and 0xFF).toByte()
+        val crcLow = (crc and 0xFF).toByte()
+
+        val fullFrame = ByteArray(frameWithoutCrc.size + 2)
+        System.arraycopy(frameWithoutCrc, 0, fullFrame, 0, frameWithoutCrc.size)
+        fullFrame[fullFrame.size - 2] = crcHigh
+        fullFrame[fullFrame.size - 1] = crcLow
+
+        return fullFrame
+    }
+
+    private fun calculateCrc16(bytes: ByteArray): Int {
+        var crc = 0xFFFF
+        for (b in bytes) {
+            crc = crc xor (b.toInt() and 0xFF)
+            for (i in 0 until 8) {
+                crc = if ((crc and 0x0001) != 0) {
+                    (crc ushr 1) xor 0xA001
+                } else {
+                    crc ushr 1
+                }
+            }
+        }
+        return crc and 0xFFFF
+    }
+
+    suspend fun sendAppProtocolCommand(name: String, commandId: Int, payload: ByteArray = byteArrayOf()): Boolean {
+        val frame = buildAppFrame(commandId, payload)
+        return sendRawFrame(name, frame)
     }
 
     fun shiftRear(direction: Int) {
-        val mac = _boundMacAddress.value ?: return
-        if (activeGatt == null || _connectionState.value != ConnectionState.CONNECTED) {
-            connectToBoundDevice(mac)
-        }
+        isShiftInProgress = true
         scope.launch(Dispatchers.IO) {
-            val payload = byteArrayOf(0x00, 0x00, direction.toByte())
-            sendAppProtocolCommand("shiftRear($direction)", 0x98.toByte(), payload)
+            Log.i(TAG, "[ADB SHIFT] Shifting Rear Derailleur (RD) direction: $direction")
+            sendAppProtocolCommand("Rear Shift ($direction)", 0x99, byteArrayOf(direction.toByte()))
+            delay(1200)
+            isShiftInProgress = false
         }
     }
 
     fun toggleFrontDerailleur() {
-        val mac = _boundMacAddress.value ?: return
-        if (activeGatt == null || _connectionState.value != ConnectionState.CONNECTED) {
-            connectToBoundDevice(mac)
-        }
+        isShiftInProgress = true
         scope.launch(Dispatchers.IO) {
-            val payload = byteArrayOf(0x00, 0x00, 0x02)
-            sendAppProtocolCommand("toggleFrontDerailleur", 0x88.toByte(), payload)
+            Log.i(TAG, "[ADB SHIFT] Toggling Front Derailleur (FD)...")
+            sendAppProtocolCommand("Front Derailleur Toggle", 0x89, byteArrayOf(0x02.toByte()))
+            delay(1200)
+            isShiftInProgress = false
         }
     }
 }
