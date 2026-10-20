@@ -45,6 +45,12 @@ class MagicshineRemoteManager private constructor(private val appContext: Contex
     private val _connectionState = MutableStateFlow(ConnectionState.DISCONNECTED)
     val connectionState: StateFlow<ConnectionState> = _connectionState.asStateFlow()
 
+    private val _isScanningRemotes = MutableStateFlow(false)
+    val isScanningRemotes: StateFlow<Boolean> = _isScanningRemotes.asStateFlow()
+
+    private val _scannedRemotes = MutableStateFlow<List<BleDeviceItem>>(emptyList())
+    val scannedRemotes: StateFlow<List<BleDeviceItem>> = _scannedRemotes.asStateFlow()
+
     private val _boundRemoteMac = MutableStateFlow<String?>(null)
     val boundRemoteMac: StateFlow<String?> = _boundRemoteMac.asStateFlow()
 
@@ -57,6 +63,7 @@ class MagicshineRemoteManager private constructor(private val appContext: Contex
     private val _doubleClickMode = MutableStateFlow("FD_TOGGLE")
     val doubleClickMode: StateFlow<String> = _doubleClickMode.asStateFlow()
 
+    private var remoteScanCallback: ScanCallback? = null
     private var lastSequenceToken = -1
     private var lastButtonCode = -1
 
@@ -94,9 +101,65 @@ class MagicshineRemoteManager private constructor(private val appContext: Contex
         }
     }
 
+    @SuppressLint("MissingPermission")
+    fun startScanForRemotes() {
+        if (bluetoothAdapter == null || !bluetoothAdapter!!.isEnabled) return
+        val scanner = bluetoothAdapter?.bluetoothLeScanner ?: return
+
+        stopScanForRemotes()
+
+        _isScanningRemotes.value = true
+        val foundMap = mutableMapOf<String, BleDeviceItem>()
+
+        val callback = object : ScanCallback() {
+            override fun onScanResult(callbackType: Int, result: ScanResult?) {
+                val device = result?.device ?: return
+                val address = device.address ?: return
+                val name = device.name ?: result.scanRecord?.deviceName ?: return
+                val upper = name.uppercase()
+
+                val isStrictMj6558 = upper.contains("M0-C0") || upper.contains("MJ_6558") || upper.contains("MJ-6558") || upper.contains("MJ6558")
+
+                if (isStrictMj6558) {
+                    foundMap[address] = BleDeviceItem(name = name, address = address, rssi = result.rssi)
+                    _scannedRemotes.value = foundMap.values.toList()
+                }
+            }
+        }
+        remoteScanCallback = callback
+
+        scope.launch(Dispatchers.Main) {
+            try {
+                scanner.startScan(callback)
+                delay(30_000)
+                stopScanForRemotes()
+            } catch (e: Exception) {
+                Log.e(TAG, "Error scanning for remotes: ${e.message}")
+                stopScanForRemotes()
+            }
+        }
+    }
+
+    @SuppressLint("MissingPermission")
+    fun stopScanForRemotes() {
+        val scanner = bluetoothAdapter?.bluetoothLeScanner
+        val callback = remoteScanCallback
+        if (scanner != null && callback != null) {
+            try {
+                scanner.stopScan(callback)
+            } catch (e: Exception) {
+                Log.e(TAG, "Error stopping remote scan: ${e.message}")
+            }
+        }
+        remoteScanCallback = null
+        _isScanningRemotes.value = false
+    }
+
     fun bindRemote(address: String, name: String) {
+        stopScanForRemotes()
         _boundRemoteMac.value = address
         _boundRemoteName.value = name
+        _scannedRemotes.value = emptyList()
         Log.i(TAG, "Binding Magicshine M0-C0 Remote MAC: $address Name: $name")
         scope.launch {
             remotePreferences.saveBoundRemote(address, name)
@@ -107,10 +170,12 @@ class MagicshineRemoteManager private constructor(private val appContext: Contex
     fun unbindRemote() {
         scope.launch {
             Log.i(TAG, "Unbinding Magicshine Remote")
+            stopScanForRemotes()
             stopScan()
             remotePreferences.clearBoundRemote()
             _boundRemoteMac.value = null
             _boundRemoteName.value = null
+            _scannedRemotes.value = emptyList()
             _connectionState.value = ConnectionState.DISCONNECTED
             _lastClickText.value = "Remote Unbound / Reset"
             lastSequenceToken = -1

@@ -5,6 +5,7 @@ import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import kotlinx.coroutines.flow.Flow
@@ -21,6 +22,9 @@ class RemotePreferences(private val context: Context) {
         private val BOUND_REMOTE_NAME_KEY = stringPreferencesKey("bound_remote_name")
         private val IS_MONITORED_KEY = booleanPreferencesKey("is_monitored")
         private val DOUBLE_CLICK_MODE_KEY = stringPreferencesKey("double_click_mode")
+        private val LAST_GATT_ASCII_TEXT_KEY = stringPreferencesKey("last_gatt_ascii_text")
+        private val LAST_GATT_TIMESTAMP_KEY = longPreferencesKey("last_gatt_timestamp")
+        private val LAST_BUILD_SIGNATURE_KEY = stringPreferencesKey("last_build_signature")
     }
 
     val boundWheeltopMac: Flow<String?> = context.dataStore.data.map { preferences ->
@@ -47,11 +51,28 @@ class RemotePreferences(private val context: Context) {
         preferences[DOUBLE_CLICK_MODE_KEY] ?: "FD_TOGGLE"
     }
 
+    val lastGattAsciiText: Flow<String?> = context.dataStore.data.map { preferences ->
+        preferences[LAST_GATT_ASCII_TEXT_KEY]
+    }
+
+    val lastGattTimestamp: Flow<Long> = context.dataStore.data.map { preferences ->
+        preferences[LAST_GATT_TIMESTAMP_KEY] ?: 0L
+    }
+
+    suspend fun checkAndClearOnNewBuild(buildSignature: String) {
+        context.dataStore.edit { preferences ->
+            val savedSignature = preferences[LAST_BUILD_SIGNATURE_KEY] ?: ""
+            if (savedSignature != buildSignature) {
+                preferences.clear()
+                preferences[LAST_BUILD_SIGNATURE_KEY] = buildSignature
+            }
+        }
+    }
+
     suspend fun saveBoundWheeltop(mac: String, name: String) {
         context.dataStore.edit { preferences ->
             preferences[BOUND_WHEELTOP_MAC_KEY] = mac
             preferences[BOUND_WHEELTOP_NAME_KEY] = name
-            // Default isMonitored to false on fresh bind
             preferences[IS_MONITORED_KEY] = false
         }
     }
@@ -69,6 +90,13 @@ class RemotePreferences(private val context: Context) {
         }
     }
 
+    suspend fun saveGattBlockDataset(asciiText: String, timestamp: Long) {
+        context.dataStore.edit { preferences ->
+            preferences[LAST_GATT_ASCII_TEXT_KEY] = asciiText
+            preferences[LAST_GATT_TIMESTAMP_KEY] = timestamp
+        }
+    }
+
     suspend fun saveDoubleClickMode(mode: String) {
         context.dataStore.edit { preferences ->
             preferences[DOUBLE_CLICK_MODE_KEY] = mode
@@ -79,6 +107,8 @@ class RemotePreferences(private val context: Context) {
         context.dataStore.edit { preferences ->
             preferences.remove(BOUND_WHEELTOP_MAC_KEY)
             preferences.remove(BOUND_WHEELTOP_NAME_KEY)
+            preferences.remove(LAST_GATT_ASCII_TEXT_KEY)
+            preferences.remove(LAST_GATT_TIMESTAMP_KEY)
             preferences[IS_MONITORED_KEY] = false
         }
     }

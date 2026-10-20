@@ -12,17 +12,21 @@ class AdbTestReceiver : BroadcastReceiver() {
         val action = intent.action ?: return
         val wheeltopManager = WheeltopManager.getInstance(context)
         val remoteManager = MagicshineRemoteManager.getInstance(context)
-        val mac = intent.getStringExtra("mac") ?: "D4:85:A1:BE:24:3B"
+        val mac = intent.getStringExtra("mac")
 
         Log.i("AdbTestReceiver", "Received ADB Broadcast Action: $action (MAC: $mac)")
 
         when (action) {
             "io.github.JaJaJim.kmagicwheeltopblip.CONNECT" -> {
-                wheeltopManager.bindDevice(mac, "EDS TX")
-                wheeltopManager.toggleMonitoring(true)
+                if (!mac.isNullOrBlank()) {
+                    wheeltopManager.bindDevice(mac, "EDS TX")
+                    wheeltopManager.pullGattBlocks()
+                } else {
+                    Log.w("AdbTestReceiver", "[ADB CONNECT] Missing required 'mac' extra parameter.")
+                }
             }
             "io.github.JaJaJim.kmagicwheeltopblip.DISCONNECT" -> {
-                wheeltopManager.toggleMonitoring(false)
+                wheeltopManager.unbindDevice()
             }
             "io.github.JaJaJim.kmagicwheeltopblip.BIND_REMOTE" -> {
                 val remoteMac = intent.getStringExtra("mac")

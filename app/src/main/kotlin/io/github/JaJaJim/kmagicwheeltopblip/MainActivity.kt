@@ -9,7 +9,6 @@ import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
-import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -23,6 +22,8 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.MaterialTheme
@@ -31,7 +32,6 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
@@ -41,14 +41,15 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import io.github.JaJaJim.kmagicwheeltopblip.ble.BleDeviceItem
-import io.github.JaJaJim.kmagicwheeltopblip.ble.ConnectionState
 import io.github.JaJaJim.kmagicwheeltopblip.ble.MagicshineRemoteManager
 import io.github.JaJaJim.kmagicwheeltopblip.ble.WheeltopManager
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
 class MainActivity : ComponentActivity() {
 
@@ -70,7 +71,7 @@ class MainActivity : ComponentActivity() {
             MaterialTheme {
                 Surface(
                     modifier = Modifier.fillMaxSize(),
-                    color = Color(0xFFE6DAF0) // Light soft violet background
+                    color = Color(0xFFE6DAF0)
                 ) {
                     EdsChargeLightScreen(wheeltopManager = wheeltopManager, remoteManager = remoteManager)
                 }
@@ -101,35 +102,21 @@ class MainActivity : ComponentActivity() {
 
 @Composable
 fun EdsChargeLightScreen(wheeltopManager: WheeltopManager, remoteManager: MagicshineRemoteManager) {
-    val connectionState by wheeltopManager.connectionState.collectAsState()
     val boundMac by wheeltopManager.boundMacAddress.collectAsState()
     val boundName by wheeltopManager.boundDeviceName.collectAsState()
-    val isMonitored by wheeltopManager.isMonitored.collectAsState()
-
-    val remoteConnectionState by remoteManager.connectionState.collectAsState()
-    val boundRemoteMac by remoteManager.boundRemoteMac.collectAsState()
-    val boundRemoteName by remoteManager.boundRemoteName.collectAsState()
-    val lastClickText by remoteManager.lastClickText.collectAsState()
-    val doubleClickMode by remoteManager.doubleClickMode.collectAsState()
-
-    val rawBlockText by wheeltopManager.rawBlockText.collectAsState()
+    val isScanningDerailleurs by wheeltopManager.isScanningDerailleurs.collectAsState()
+    val scannedDerailleurs by wheeltopManager.scannedDerailleurs.collectAsState()
+    val isPullingGattBlocks by wheeltopManager.isPullingGattBlocks.collectAsState()
+    val lastGattAsciiText by wheeltopManager.lastGattAsciiText.collectAsState()
+    val lastGattTimestamp by wheeltopManager.lastGattTimestamp.collectAsState()
     val blockStatusText by wheeltopManager.blockStatusText.collectAsState()
 
-    val statusText = when {
-        !isMonitored -> "BLE Disconnected"
-        blockStatusText == "Auto-Reconnecting..." -> "Auto-Reconnecting..."
-        connectionState == ConnectionState.CONNECTED -> "GATT Connected"
-        connectionState == ConnectionState.CONNECTING -> "Connecting GATT..."
-        else -> "BLE Disconnected"
-    }
-
-    val remoteStatusText = when (remoteConnectionState) {
-        ConnectionState.CONNECTED -> "Remote Active (Low Latency)"
-        ConnectionState.CONNECTING -> "Connecting Remote..."
-        else -> "Remote Standby"
-    }
-
-    val modelName = boundName ?: "EDS TX"
+    val boundRemoteMac by remoteManager.boundRemoteMac.collectAsState()
+    val boundRemoteName by remoteManager.boundRemoteName.collectAsState()
+    val isScanningRemotes by remoteManager.isScanningRemotes.collectAsState()
+    val scannedRemotes by remoteManager.scannedRemotes.collectAsState()
+    val lastClickText by remoteManager.lastClickText.collectAsState()
+    val doubleClickMode by remoteManager.doubleClickMode.collectAsState()
 
     val scrollState = rememberScrollState()
 
@@ -139,6 +126,7 @@ fun EdsChargeLightScreen(wheeltopManager: WheeltopManager, remoteManager: Magics
             .verticalScroll(scrollState)
             .padding(14.dp)
     ) {
+        // Header
         Text(
             text = "KMagicWheeltopBlip",
             fontSize = 20.sp,
@@ -167,68 +155,265 @@ fun EdsChargeLightScreen(wheeltopManager: WheeltopManager, remoteManager: Magics
             )
         }
 
+        Spacer(modifier = Modifier.height(6.dp))
+
+        // --- SECTION 1: WHEELTOP EDS DERAILLEUR ---
         Text(
-            text = "Wheeltop EDS",
+            text = "Wheeltop EDS Derailleur",
             fontSize = 15.sp,
             fontWeight = FontWeight.Bold,
             color = Color(0xFF1E1B2E),
             modifier = Modifier.padding(vertical = 4.dp)
         )
 
-        GattMasterCard(
-            deviceName = modelName,
-            statusText = statusText,
-            isMonitored = isMonitored,
-            rawBlockText = rawBlockText,
-            blockStatusText = blockStatusText,
-            onMonitoredChange = { enabled ->
-                val mac = if (boundMac.isNullOrBlank()) "D4:85:A1:BE:24:3B" else boundMac!!
-                if (boundMac.isNullOrBlank()) {
-                    wheeltopManager.bindDevice(mac, "EDS TX")
-                }
-                wheeltopManager.toggleMonitoring(enabled)
+        Button(
+            onClick = { wheeltopManager.startScanForWheeltopDevices() },
+            modifier = Modifier.fillMaxWidth(),
+            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF007A5E)),
+            shape = RoundedCornerShape(10.dp)
+        ) {
+            Text(
+                text = if (isScanningDerailleurs) "Searching EDS..." else "Search for EDS",
+                fontSize = 14.sp,
+                fontWeight = FontWeight.Bold,
+                color = Color.White
+            )
+        }
+
+        Spacer(modifier = Modifier.height(10.dp))
+
+        val derailleurList = when {
+            !boundMac.isNullOrBlank() -> listOf(
+                BleDeviceItem(
+                    name = boundName ?: "EDS TX",
+                    address = boundMac!!,
+                    rssi = 0
+                )
+            )
+            isScanningDerailleurs || scannedDerailleurs.isNotEmpty() -> scannedDerailleurs
+            else -> emptyList()
+        }
+
+        if (derailleurList.isEmpty()) {
+            Text(
+                text = "No WheelTop derailleur bound. Click 'Search for EDS' to discover nearby derailleurs.",
+                fontSize = 12.sp,
+                fontWeight = FontWeight.Medium,
+                color = Color(0xFF5E546E),
+                modifier = Modifier.padding(horizontal = 4.dp, vertical = 6.dp)
+            )
+        } else {
+            derailleurList.forEach { item ->
+                val isBound = boundMac.equals(item.address, ignoreCase = true)
+                DerailleurCard(
+                    deviceName = item.name,
+                    deviceMac = item.address,
+                    isBound = isBound,
+                    isPullingBlocks = isPullingGattBlocks,
+                    blockStatusText = if (isBound) blockStatusText else null,
+                    lastAsciiText = if (isBound) lastGattAsciiText else null,
+                    lastTimestamp = if (isBound) lastGattTimestamp else 0L,
+                    onBindChange = { enabled ->
+                        if (enabled) {
+                            wheeltopManager.bindDevice(item.address, item.name)
+                        } else {
+                            wheeltopManager.unbindDevice()
+                        }
+                    },
+                    onPullBlocks = {
+                        wheeltopManager.pullGattBlocks()
+                    }
+                )
+                Spacer(modifier = Modifier.height(10.dp))
             }
-        )
+        }
 
         Spacer(modifier = Modifier.height(14.dp))
 
+        // --- SECTION 2: MAGICSHINE REMOTE ---
         Text(
             text = "Magicshine Remote",
             fontSize = 15.sp,
             fontWeight = FontWeight.Bold,
             color = Color(0xFF1E1B2E),
-            modifier = Modifier.padding(vertical = 6.dp)
+            modifier = Modifier.padding(vertical = 4.dp)
         )
 
-        val displayRemotes = listOf(
-            BleDeviceItem(
-                name = boundRemoteName ?: "M0-C0 MJ_6558",
-                address = boundRemoteMac ?: "60:03:00:08:CC:77",
-                rssi = 0
+        Button(
+            onClick = { remoteManager.startScanForRemotes() },
+            modifier = Modifier.fillMaxWidth(),
+            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF007A5E)),
+            shape = RoundedCornerShape(10.dp)
+        ) {
+            Text(
+                text = if (isScanningRemotes) "Searching Blip..." else "Search for Blip",
+                fontSize = 14.sp,
+                fontWeight = FontWeight.Bold,
+                color = Color.White
             )
-        )
+        }
 
-        displayRemotes.forEach { remoteItem ->
-            val isThisRemoteBound = boundRemoteMac.equals(remoteItem.address, ignoreCase = true)
-            RemoteCard(
-                deviceName = remoteItem.name,
-                deviceMac = remoteItem.address,
-                statusText = if (isThisRemoteBound) remoteStatusText else "Scanning for Remote...",
-                isBound = isThisRemoteBound,
-                lastClickText = if (isThisRemoteBound) lastClickText else null,
-                doubleClickMode = doubleClickMode,
-                onDoubleClickModeChange = { mode ->
-                    remoteManager.setDoubleClickMode(mode)
-                },
-                onBindChange = { enabled ->
-                    if (enabled) {
-                        remoteManager.bindRemote(remoteItem.address, remoteItem.name)
-                    } else {
-                        remoteManager.unbindRemote()
+        Spacer(modifier = Modifier.height(10.dp))
+
+        val remoteList = when {
+            !boundRemoteMac.isNullOrBlank() -> listOf(
+                BleDeviceItem(
+                    name = boundRemoteName ?: "M0-C0 MJ_6558",
+                    address = boundRemoteMac!!,
+                    rssi = 0
+                )
+            )
+            isScanningRemotes || scannedRemotes.isNotEmpty() -> scannedRemotes
+            else -> emptyList()
+        }
+
+        if (remoteList.isEmpty()) {
+            Text(
+                text = "No Magicshine remote bound. Click 'Search for Blip' to discover nearby remotes.",
+                fontSize = 12.sp,
+                fontWeight = FontWeight.Medium,
+                color = Color(0xFF5E546E),
+                modifier = Modifier.padding(horizontal = 4.dp, vertical = 6.dp)
+            )
+        } else {
+            remoteList.forEach { remoteItem ->
+                val isThisRemoteBound = boundRemoteMac.equals(remoteItem.address, ignoreCase = true)
+                RemoteCard(
+                    deviceName = remoteItem.name,
+                    deviceMac = remoteItem.address,
+                    isBound = isThisRemoteBound,
+                    lastClickText = if (isThisRemoteBound) lastClickText else null,
+                    doubleClickMode = doubleClickMode,
+                    onDoubleClickModeChange = { mode ->
+                        remoteManager.setDoubleClickMode(mode)
+                    },
+                    onBindChange = { enabled ->
+                        if (enabled) {
+                            remoteManager.bindRemote(remoteItem.address, remoteItem.name)
+                        } else {
+                            remoteManager.unbindRemote()
+                        }
                     }
-                }
+                )
+                Spacer(modifier = Modifier.height(10.dp))
+            }
+        }
+    }
+}
+
+@Composable
+private fun DerailleurCard(
+    deviceName: String,
+    deviceMac: String,
+    isBound: Boolean,
+    isPullingBlocks: Boolean,
+    blockStatusText: String?,
+    lastAsciiText: String?,
+    lastTimestamp: Long,
+    onBindChange: (Boolean) -> Unit,
+    onPullBlocks: () -> Unit
+) {
+    val containerColor = if (isBound) Color(0x3F45DDA0) else Color(0x3FE53935)
+    val borderColor = if (isBound) Color(0x8045DDA0) else Color(0x80D32F2F)
+
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(containerColor = containerColor),
+        border = BorderStroke(1.dp, borderColor),
+        shape = RoundedCornerShape(14.dp)
+    ) {
+        Column(modifier = Modifier.padding(14.dp)) {
+            Text(
+                text = deviceName,
+                fontWeight = FontWeight.Bold,
+                fontSize = 16.sp,
+                color = Color(0xFF1E1B2E)
             )
+            Text(
+                text = deviceMac,
+                fontSize = 11.sp,
+                color = Color(0xFF5E546E)
+            )
+
             Spacer(modifier = Modifier.height(10.dp))
+
+            if (isBound) {
+                Button(
+                    onClick = onPullBlocks,
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF007A5E)),
+                    shape = RoundedCornerShape(8.dp)
+                ) {
+                    Text(
+                        text = if (isPullingBlocks) "Pulling GATT Blocks..." else "Pull GATT Blocks",
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = Color.White
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(8.dp))
+
+                val liveStatus = if (!blockStatusText.isNullOrBlank()) blockStatusText else "Ready for Pull"
+                Text(
+                    text = "Status: $liveStatus",
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = Color(0xFF006644)
+                )
+
+                if (lastTimestamp > 0L) {
+                    val dateStr = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US).format(Date(lastTimestamp))
+                    Text(
+                        text = "Last Pull: $dateStr",
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Normal,
+                        color = Color(0xFF5E546E)
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(4.dp))
+
+                Surface(
+                    modifier = Modifier.fillMaxWidth(),
+                    color = Color(0x1A000000),
+                    shape = RoundedCornerShape(8.dp)
+                ) {
+                    Text(
+                        text = if (!lastAsciiText.isNullOrBlank()) lastAsciiText else "No GATT data pulled yet. Click 'Pull GATT Blocks'.",
+                        fontSize = 10.sp,
+                        fontFamily = FontFamily.Monospace,
+                        color = Color(0xFF1E1B2E),
+                        modifier = Modifier.padding(8.dp)
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(10.dp))
+            }
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = if (isBound) "Slide to unbind" else "Slide to bind",
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.Medium,
+                    color = Color(0xFF1E1B2E)
+                )
+
+                Switch(
+                    checked = isBound,
+                    onCheckedChange = onBindChange,
+                    colors = SwitchDefaults.colors(
+                        checkedThumbColor = Color.White,
+                        checkedTrackColor = Color(0xFF007A5E),
+                        uncheckedThumbColor = Color.White,
+                        uncheckedTrackColor = Color(0xFFB00020)
+                    )
+                )
+            }
         }
     }
 }
@@ -237,7 +422,6 @@ fun EdsChargeLightScreen(wheeltopManager: WheeltopManager, remoteManager: Magics
 private fun RemoteCard(
     deviceName: String,
     deviceMac: String,
-    statusText: String,
     isBound: Boolean,
     lastClickText: String?,
     doubleClickMode: String,
@@ -267,7 +451,7 @@ private fun RemoteCard(
                         color = Color(0xFF1E1B2E)
                     )
                     Text(
-                        text = "$deviceMac ($statusText)",
+                        text = deviceMac,
                         fontSize = 11.sp,
                         color = Color(0xFF5E546E)
                     )
@@ -410,116 +594,6 @@ private fun DoubleClickOptionRow(
                     uncheckedTrackColor = Color(0xFF777777)
                 )
             )
-        }
-    }
-}
-
-@Composable
-private fun GattMasterCard(
-    deviceName: String,
-    statusText: String,
-    isMonitored: Boolean,
-    rawBlockText: String,
-    blockStatusText: String?,
-    onMonitoredChange: (Boolean) -> Unit
-) {
-    val containerColor = if (isMonitored) Color(0x3F45DDA0) else Color(0x3FE53935)
-    val borderColor = if (isMonitored) Color(0x8045DDA0) else Color(0x80D32F2F)
-
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(containerColor = containerColor),
-        border = BorderStroke(1.dp, borderColor),
-        shape = RoundedCornerShape(14.dp)
-    ) {
-        Column(modifier = Modifier.padding(14.dp)) {
-            Text(
-                text = deviceName,
-                fontWeight = FontWeight.Bold,
-                fontSize = 16.sp,
-                color = Color(0xFF1E1B2E)
-            )
-            Text(
-                text = statusText,
-                fontSize = 12.sp,
-                color = Color(0xFF5E546E)
-            )
-
-            if (isMonitored) {
-                // --- BLOCK 0..4 TELEMETRY & PARAMETERS ---
-                Spacer(modifier = Modifier.height(10.dp))
-
-                Surface(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(1.dp),
-                    color = Color(0x301E1B2E)
-                ) {}
-
-                Spacer(modifier = Modifier.height(8.dp))
-
-                Column(modifier = Modifier.fillMaxWidth()) {
-                    Text(
-                        text = "Block 0..4 Telemetry",
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 13.sp,
-                        color = Color(0xFF1E1B2E)
-                    )
-
-                    if (!blockStatusText.isNullOrBlank()) {
-                        Text(
-                            text = blockStatusText,
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.Medium,
-                            color = Color(0xFF006644),
-                            modifier = Modifier.padding(top = 2.dp)
-                        )
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(6.dp))
-
-                val displayText = if (rawBlockText.isNotBlank()) rawBlockText else "Waiting for Block 0..4 response..."
-                Surface(
-                    modifier = Modifier.fillMaxWidth(),
-                    color = Color(0x1A000000),
-                    shape = RoundedCornerShape(8.dp)
-                ) {
-                    Text(
-                        text = displayText,
-                        fontSize = 10.sp,
-                        fontFamily = FontFamily.Monospace,
-                        color = Color(0xFF1E1B2E),
-                        modifier = Modifier.padding(8.dp)
-                    )
-                }
-            }
-
-            Spacer(modifier = Modifier.height(10.dp))
-
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                    text = if (isMonitored) "Slide to disconnect" else "Slide to connect",
-                    fontSize = 14.sp,
-                    fontWeight = FontWeight.Medium,
-                    color = Color(0xFF1E1B2E)
-                )
-
-                Switch(
-                    checked = isMonitored,
-                    onCheckedChange = onMonitoredChange,
-                    colors = SwitchDefaults.colors(
-                        checkedThumbColor = Color.White,
-                        checkedTrackColor = Color(0xFF007A5E),
-                        uncheckedThumbColor = Color.White,
-                        uncheckedTrackColor = Color(0xFFB00020)
-                    )
-                )
-            }
         }
     }
 }
