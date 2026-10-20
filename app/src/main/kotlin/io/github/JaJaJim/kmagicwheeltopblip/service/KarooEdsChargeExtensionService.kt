@@ -1,6 +1,8 @@
 package io.github.JaJaJim.kmagicwheeltopblip.service
 
+import android.app.PendingIntent
 import android.content.Context
+import android.content.Intent
 import android.view.View
 import android.widget.RemoteViews
 import io.github.JaJaJim.kmagicwheeltopblip.BuildConfig
@@ -20,6 +22,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.launch
 
 class KarooEdsChargeExtensionService : KarooExtension("kmagic-wheeltop-blip", BuildConfig.VERSION_NAME) {
@@ -90,8 +93,27 @@ class KarooEdsChargeExtensionService : KarooExtension("kmagic-wheeltop-blip", Bu
             emitter.onNext(UpdateGraphicConfig(showHeader = true))
 
             val job = serviceScope.launch(Dispatchers.Main) {
-                wheeltopManager.lastGattAsciiText.collectLatest { asciiText ->
+                combine(
+                    wheeltopManager.lastGattAsciiText,
+                    wheeltopManager.blockStatusText,
+                    wheeltopManager.isPullingGattBlocks,
+                    wheeltopManager.boundMacAddress
+                ) { asciiText, blockStatus, isPulling, boundMac ->
+                    Tuple4(asciiText, blockStatus, isPulling, boundMac)
+                }.collectLatest { (asciiText, blockStatus, isPulling, boundMac) ->
                     val remoteViews = RemoteViews(context.packageName, R.layout.wheeltop_widget_view)
+
+                    // Touch Click-Sensitivity (Tap Widget to Refresh)
+                    val clickIntent = Intent("io.github.JaJaJim.kmagicwheeltopblip.WIDGET_CLICK").apply {
+                        setPackage(context.packageName)
+                    }
+                    val pendingIntent = PendingIntent.getBroadcast(
+                        context,
+                        0,
+                        clickIntent,
+                        PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+                    )
+                    remoteViews.setOnClickPendingIntent(R.id.widget_container, pendingIntent)
 
                     if (!asciiText.isNullOrBlank()) {
                         val parsedMap = parseAsciiMap(asciiText)
@@ -100,7 +122,6 @@ class KarooEdsChargeExtensionService : KarooExtension("kmagic-wheeltop-blip", Bu
                         val isGx = boundName.contains("GX", ignoreCase = true) || boundName.contains("GEX", ignoreCase = true) || (parsedMap.containsKey("L_POWER") && (parsedMap["Q_POWER"] ?: 0f) <= 1.0f)
 
                         if (isOx) {
-                            // Layout C: EDS OX (2 Centered Rows)
                             val rm = parsedMap["POWER_1"] ?: 0f
                             val rd = parsedMap["POWER_2"] ?: 0f
 
@@ -115,7 +136,6 @@ class KarooEdsChargeExtensionService : KarooExtension("kmagic-wheeltop-blip", Bu
                             remoteViews.setTextViewText(R.id.txt_top_center, "RM: %.2fV".format(rm))
                             remoteViews.setTextViewText(R.id.txt_bottom_center, "RD: %.2fV".format(rd))
                         } else if (isGx) {
-                            // Layout B: EDS GX / GeX (2 Rows: Shifters top, RD centered bottom)
                             val sl = parsedMap["L_POWER"] ?: 0f
                             val sr = parsedMap["R_POWER"] ?: 0f
                             val rd = parsedMap["H_POWER"] ?: 0f
@@ -132,7 +152,6 @@ class KarooEdsChargeExtensionService : KarooExtension("kmagic-wheeltop-blip", Bu
                             remoteViews.setTextViewText(R.id.txt_top_right, "SR: %.2fV".format(sr))
                             remoteViews.setTextViewText(R.id.txt_bottom_center, "RD: %.2fV".format(rd))
                         } else {
-                            // Layout A: EDS TX (4 Quads / 2x2 Grid)
                             val sl = parsedMap["L_POWER"] ?: 0f
                             val sr = parsedMap["R_POWER"] ?: 0f
                             val fd = parsedMap["Q_POWER"] ?: 0f
@@ -152,9 +171,25 @@ class KarooEdsChargeExtensionService : KarooExtension("kmagic-wheeltop-blip", Bu
                             remoteViews.setTextViewText(R.id.txt_bottom_right, "RD: %.2fV".format(rd))
                         }
                     } else {
-                        // Searching / Initial State
+                        // Reason Status Messages
+                        val reasonText = when {
+                            boundMac.isNullOrBlank() -> "No Derailleur Bound"
+                            isPulling -> "Syncing..."
+                            blockStatus == "Pull Timed Out / Try Again" -> "Connection Failed"
+                            blockStatus != null && blockStatus.contains("Failed", ignoreCase = true) -> "Block Read Failed"
+                            else -> "Tap to Sync"
+                        }
+
+                        remoteViews.setViewVisibility(R.id.txt_top_left, View.GONE)
+                        remoteViews.setViewVisibility(R.id.txt_top_right, View.GONE)
+                        remoteViews.setViewVisibility(R.id.txt_top_center, View.VISIBLE)
+
+                        remoteViews.setViewVisibility(R.id.txt_bottom_left, View.GONE)
+                        remoteViews.setViewVisibility(R.id.txt_bottom_right, View.GONE)
+                        remoteViews.setViewVisibility(R.id.txt_bottom_center, View.VISIBLE)
+
                         remoteViews.setTextViewText(R.id.txt_top_center, "WheelTop")
-                        remoteViews.setTextViewText(R.id.txt_bottom_center, "Searching...")
+                        remoteViews.setTextViewText(R.id.txt_bottom_center, reasonText)
                     }
 
                     emitter.updateView(remoteViews)
@@ -217,3 +252,5 @@ class KarooEdsChargeExtensionService : KarooExtension("kmagic-wheeltop-blip", Bu
         }
     }
 }
+
+private data class Tuple4<A, B, C, D>(val first: A, val second: B, val third: C, val fourth: D)
