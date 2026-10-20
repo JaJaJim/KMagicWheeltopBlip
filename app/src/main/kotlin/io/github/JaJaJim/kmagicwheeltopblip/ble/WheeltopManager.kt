@@ -345,7 +345,7 @@ class WheeltopManager private constructor(context: Context) {
             if (newState == BluetoothProfile.STATE_CONNECTED) {
                 activeGatt = gatt
                 _connectionState.value = ConnectionState.CONNECTED
-                Log.i(TAG, "GATT Physical Link Connected! Requesting CONNECTION_PRIORITY_HIGH (15ms interval) & Starting Service Discovery in 300ms...")
+                Log.i(TAG, "GATT Physical Link Connected! Requesting CONNECTION_PRIORITY_HIGH (15ms interval) & Starting Service Discovery in 400ms...")
 
                 try {
                     gatt?.requestConnectionPriority(BluetoothGatt.CONNECTION_PRIORITY_HIGH)
@@ -354,7 +354,7 @@ class WheeltopManager private constructor(context: Context) {
                 }
 
                 scope.launch(Dispatchers.IO) {
-                    delay(300)
+                    delay(400)
                     try {
                         gatt?.discoverServices()
                     } catch (e: Exception) {
@@ -387,11 +387,11 @@ class WheeltopManager private constructor(context: Context) {
         @SuppressLint("MissingPermission")
         override fun onDescriptorWrite(gatt: BluetoothGatt?, descriptor: BluetoothGattDescriptor?, status: Int) {
             val isOk = (status == BluetoothGatt.GATT_SUCCESS)
-            Log.i(TAG, "CCCD Descriptor Write Status: $status (OK=$isOk). Triggering Auth Handshake...")
+            Log.i(TAG, "CCCD Descriptor Write Status: $status (OK=$isOk). Triggering Auth Handshake in 400ms...")
             if (isOk) {
                 _connectionState.value = ConnectionState.CONNECTED
                 scope.launch(Dispatchers.IO) {
-                    delay(250)
+                    delay(400)
                     sendRawFrame("Auth Handshake", AUTH_PASS_FRAME)
                 }
             }
@@ -417,7 +417,7 @@ class WheeltopManager private constructor(context: Context) {
         initJob = scope.launch(Dispatchers.IO) {
             Log.i(TAG, "[FIREWORK FLOW] Step 1: Sending 1-byte 0xFA Pipe Opener (0x80)...")
             sendAppProtocolCommand("0xFA (Pipe Opener)", 0xFA, byteArrayOf(0x80.toByte()))
-            delay(250)
+            delay(350)
 
             pingPongStep = 2
             _blockStatusText.value = "Reading Block 0 (0/5)..."
