@@ -189,6 +189,8 @@ class KarooEdsChargeExtensionService : KarooExtension("kmagic-wheeltop-blip", Bu
                             remoteViews.setViewVisibility(R.id.txt_bottom_right, View.VISIBLE)
                             remoteViews.setViewVisibility(R.id.txt_bottom_center, View.GONE)
 
+                            remoteViews.setTextViewText(R.id.txt_top_center, "")
+                            remoteViews.setTextViewText(R.id.txt_bottom_center, "")
                             remoteViews.setTextViewText(R.id.txt_top_left, "SL: %.2fV".format(sl))
                             remoteViews.setTextViewText(R.id.txt_top_right, "SR: %.2fV".format(sr))
                             remoteViews.setTextViewText(R.id.txt_bottom_left, "FD: %.2fV".format(fd))

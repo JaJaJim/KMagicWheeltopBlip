@@ -539,7 +539,6 @@ class WheeltopManager private constructor(context: Context) {
         } else if (data.size >= 100) {
             if (pingPongStep == 2) {
                 pingPongStep = 3
-                _blockStatusText.value = "Block 0 Received (1/5)..."
                 Log.i(TAG, "===> [BLOCK 0 RECEIVED (132 BYTES)!] Buffer 200ms -> Sending read block 1 (0xFB, 00 01 51)...")
                 scope.launch(Dispatchers.IO) {
                     delay(200)
@@ -547,7 +546,6 @@ class WheeltopManager private constructor(context: Context) {
                 }
             } else if (pingPongStep == 3) {
                 pingPongStep = 4
-                _blockStatusText.value = "Block 1 Received (2/5)..."
                 Log.i(TAG, "===> [BLOCK 1 RECEIVED (132 BYTES)!] Buffer 200ms -> Sending read block 2 (0xFB, 00 02 51)...")
                 scope.launch(Dispatchers.IO) {
                     delay(200)
@@ -555,7 +553,6 @@ class WheeltopManager private constructor(context: Context) {
                 }
             } else if (pingPongStep == 4) {
                 pingPongStep = 5
-                _blockStatusText.value = "Block 2 Received (3/5)..."
                 Log.i(TAG, "===> [BLOCK 2 RECEIVED (132 BYTES)!] Buffer 200ms -> Sending read block 3 (0xFB, 00 03 51)...")
                 scope.launch(Dispatchers.IO) {
                     delay(200)
@@ -563,7 +560,6 @@ class WheeltopManager private constructor(context: Context) {
                 }
             } else if (pingPongStep == 5) {
                 pingPongStep = 6
-                _blockStatusText.value = "Block 3 Received (4/5)..."
                 Log.i(TAG, "===> [BLOCK 3 RECEIVED (132 BYTES)!] Buffer 200ms -> Sending read block 4 (0xFB, 00 04 51)...")
                 scope.launch(Dispatchers.IO) {
                     delay(200)
@@ -572,7 +568,7 @@ class WheeltopManager private constructor(context: Context) {
             } else if (pingPongStep == 6) {
                 connectTimeoutJob?.cancel()
                 connectTimeoutJob = null
-                _blockStatusText.value = "Blocks 0..4 Unlocked (5/5 Complete)"
+                _blockStatusText.value = "Blocks 0..4 Unlocked"
                 Log.i(TAG, "===> [BLOCK 4 RECEIVED (132 BYTES)!] ALL BLOCKS 0..4 FULLY UNLOCKED!")
 
                 val fullAscii = asciiBuffer.toString()
