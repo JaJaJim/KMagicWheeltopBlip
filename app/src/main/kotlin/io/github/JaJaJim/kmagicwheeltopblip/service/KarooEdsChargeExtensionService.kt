@@ -123,6 +123,8 @@ class KarooEdsChargeExtensionService : KarooExtension("kmagic-wheeltop-blip", Bu
                     remoteViews.setOnClickPendingIntent(R.id.txt_bottom_right, pendingIntent)
                     remoteViews.setOnClickPendingIntent(R.id.txt_bottom_center, pendingIntent)
 
+                    val hasError = (blockStatus == "Connection Failed" || blockStatus == "Block Read Failed" || boundMac.isNullOrBlank())
+
                     if (isPulling) {
                         // Live Progress Mode during active GATT Block Pull
                         val progressText = if (!blockStatus.isNullOrBlank()) blockStatus else "Syncing..."
@@ -137,6 +139,25 @@ class KarooEdsChargeExtensionService : KarooExtension("kmagic-wheeltop-blip", Bu
 
                         remoteViews.setTextViewText(R.id.txt_top_center, "WheelTop")
                         remoteViews.setTextViewText(R.id.txt_bottom_center, progressText)
+                    } else if (hasError) {
+                        // Unconditional Error Reason Display
+                        val reasonText = when {
+                            boundMac.isNullOrBlank() -> "No Derailleur Bound"
+                            blockStatus == "Connection Failed" -> "Connection Failed"
+                            blockStatus == "Block Read Failed" -> "Block Read Failed"
+                            else -> "Tap to Sync"
+                        }
+
+                        remoteViews.setViewVisibility(R.id.txt_top_left, View.GONE)
+                        remoteViews.setViewVisibility(R.id.txt_top_right, View.GONE)
+                        remoteViews.setViewVisibility(R.id.txt_top_center, View.VISIBLE)
+
+                        remoteViews.setViewVisibility(R.id.txt_bottom_left, View.GONE)
+                        remoteViews.setViewVisibility(R.id.txt_bottom_right, View.GONE)
+                        remoteViews.setViewVisibility(R.id.txt_bottom_center, View.VISIBLE)
+
+                        remoteViews.setTextViewText(R.id.txt_top_center, "WheelTop")
+                        remoteViews.setTextViewText(R.id.txt_bottom_center, reasonText)
                     } else if (!asciiText.isNullOrBlank()) {
                         val parsedMap = parseAsciiMap(asciiText)
                         val boundName = wheeltopManager.boundDeviceName.value ?: "EDS TX"
@@ -193,14 +214,6 @@ class KarooEdsChargeExtensionService : KarooExtension("kmagic-wheeltop-blip", Bu
                             remoteViews.setTextViewText(R.id.txt_bottom_right, "RD: %.2fV".format(rd))
                         }
                     } else {
-                        // Reason Status Messages
-                        val reasonText = when {
-                            boundMac.isNullOrBlank() -> "No Derailleur Bound"
-                            blockStatus == "Pull Timed Out / Try Again" -> "Connection Failed"
-                            blockStatus != null && blockStatus.contains("Failed", ignoreCase = true) -> "Block Read Failed"
-                            else -> "Tap to Sync"
-                        }
-
                         remoteViews.setViewVisibility(R.id.txt_top_left, View.GONE)
                         remoteViews.setViewVisibility(R.id.txt_top_right, View.GONE)
                         remoteViews.setViewVisibility(R.id.txt_top_center, View.VISIBLE)
@@ -210,7 +223,7 @@ class KarooEdsChargeExtensionService : KarooExtension("kmagic-wheeltop-blip", Bu
                         remoteViews.setViewVisibility(R.id.txt_bottom_center, View.VISIBLE)
 
                         remoteViews.setTextViewText(R.id.txt_top_center, "WheelTop")
-                        remoteViews.setTextViewText(R.id.txt_bottom_center, reasonText)
+                        remoteViews.setTextViewText(R.id.txt_bottom_center, "Tap to Sync")
                     }
 
                     emitter.updateView(remoteViews)

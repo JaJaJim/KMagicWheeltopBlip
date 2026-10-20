@@ -274,31 +274,53 @@ class WheeltopManager private constructor(context: Context) {
 
     fun pullGattBlocks() {
         val mac = _boundMacAddress.value ?: return
-        Log.i(TAG, "pullGattBlocks() triggered for MAC: $mac")
+        if (_isPullingGattBlocks.value && pullRetryCount > 0) {
+            Log.i(TAG, "pullGattBlocks() already in progress (Attempt $pullRetryCount/5). Skipping duplicate trigger.")
+            return
+        }
+
         stopScanForWheeltopDevices()
         _isPullingGattBlocks.value = true
         pullRetryCount = 0
+        executePullAttempt(mac)
+    }
+
+    private fun executePullAttempt(mac: String) {
+        pullRetryCount++
+        if (pullRetryCount > 5) {
+            Log.e(TAG, "===> [PULL GATT BLOCKS FAILED] Exceeded 5 attempts. Marking as Connection Failed.")
+            _isPullingGattBlocks.value = false
+            _blockStatusText.value = "Connection Failed"
+            disconnectGatt()
+            return
+        }
+
+        Log.i(TAG, "===> [PULL GATT BLOCKS ATTEMPT $pullRetryCount/5] MAC: $mac")
+        _blockStatusText.value = "Syncing ($pullRetryCount/5)..."
         asciiBuffer.clear()
         pingPongStep = 0
 
         connectTimeoutJob?.cancel()
         connectTimeoutJob = scope.launch(Dispatchers.IO) {
             delay(8_000) // 8-second hard safety timeout
-            if (_isPullingGattBlocks.value) {
-                Log.e(TAG, "[PULL TIMEOUT] GATT block pull timed out after 8s. Performing 2s modem cooldown...")
-                _isPullingGattBlocks.value = false
-                _blockStatusText.value = "Pull Timed Out / Try Again"
+            if (_isPullingGattBlocks.value && pingPongStep < 6) {
+                Log.w(TAG, "[PULL ATTEMPT $pullRetryCount/5 TIMED OUT] Performing 2s modem cooldown & retrying...")
                 disconnectGatt()
-                delay(2000) // Qualcomm modem 2s cooldown
+                delay(2000) // 2s Qualcomm modem quiet cooldown
+                if (_isPullingGattBlocks.value && pullRetryCount < 5) {
+                    executePullAttempt(mac)
+                } else {
+                    Log.e(TAG, "===> [PULL GATT BLOCKS FAILED] All 5 attempts exhausted.")
+                    _isPullingGattBlocks.value = false
+                    _blockStatusText.value = "Connection Failed"
+                }
             }
         }
 
         if (activeGatt != null && _connectionState.value == ConnectionState.CONNECTED) {
             Log.i(TAG, "GATT already CONNECTED. Triggering fast block readout directly...")
-            _blockStatusText.value = "Authenticating..."
             startInitializationSequence()
         } else {
-            _blockStatusText.value = "Connecting GATT..."
             connectToBoundDevice(mac)
         }
     }
