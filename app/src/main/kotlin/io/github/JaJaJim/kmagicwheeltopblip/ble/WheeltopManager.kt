@@ -701,8 +701,8 @@ class WheeltopManager private constructor(context: Context) {
             connectToBoundDevice(mac)
         }
         scope.launch(Dispatchers.IO) {
-            val payload = byteArrayOf(0x00, 0x00, direction.toByte())
-            sendAppProtocolCommand("shiftRear($direction)", 0x98, payload)
+            val payload = byteArrayOf(direction.toByte())
+            sendAppProtocolCommand("shiftRear($direction)", 0x99, payload)
         }
     }
 
@@ -712,8 +712,8 @@ class WheeltopManager private constructor(context: Context) {
             connectToBoundDevice(mac)
         }
         scope.launch(Dispatchers.IO) {
-            val payload = byteArrayOf(0x00, 0x00, 0x02)
-            sendAppProtocolCommand("toggleFrontDerailleur", 0x88, payload)
+            val payload = byteArrayOf(0x02.toByte())
+            sendAppProtocolCommand("toggleFrontDerailleur", 0x89, payload)
         }
     }
 }
