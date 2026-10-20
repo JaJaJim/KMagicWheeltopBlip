@@ -17,6 +17,10 @@ class AdbTestReceiver : BroadcastReceiver() {
         Log.i("AdbTestReceiver", "Received ADB Broadcast Action: $action (MAC: $mac)")
 
         when (action) {
+            "io.github.JaJaJim.kmagicwheeltopblip.WIDGET_CLICK" -> {
+                Log.i("AdbTestReceiver", "===> [TOUCH WIDGET CLICK] User tapped datafield on Karoo screen! Triggering pullGattBlocks()...")
+                wheeltopManager.pullGattBlocks()
+            }
             "io.github.JaJaJim.kmagicwheeltopblip.CONNECT" -> {
                 if (!mac.isNullOrBlank()) {
                     wheeltopManager.bindDevice(mac, "EDS TX")

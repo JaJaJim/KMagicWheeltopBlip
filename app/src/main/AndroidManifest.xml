@@ -44,6 +44,7 @@
             android:name=".AdbTestReceiver"
             android:exported="true">
             <intent-filter>
+                <action android:name="io.github.JaJaJim.kmagicwheeltopblip.WIDGET_CLICK" />
                 <action android:name="io.github.JaJaJim.kmagicwheeltopblip.CONNECT" />
                 <action android:name="io.github.JaJaJim.kmagicwheeltopblip.DISCONNECT" />
                 <action android:name="io.github.JaJaJim.kmagicwheeltopblip.UNBIND_REMOTE" />
