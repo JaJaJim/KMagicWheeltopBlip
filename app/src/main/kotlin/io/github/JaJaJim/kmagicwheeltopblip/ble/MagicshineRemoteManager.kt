@@ -35,7 +35,7 @@ class MagicshineRemoteManager private constructor(private val appContext: Contex
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
     private val remotePreferences = RemotePreferences(appContext)
-    private val wheeltopManager = WheeltopManager.getInstance(appContext)
+    private val wheeltopManager by lazy { WheeltopManager.getInstance(appContext) }
 
     private val bluetoothManager = appContext.getSystemService(Context.BLUETOOTH_SERVICE) as? BluetoothManager
     private val bluetoothAdapter: BluetoothAdapter? get() = bluetoothManager?.adapter
@@ -51,16 +51,12 @@ class MagicshineRemoteManager private constructor(private val appContext: Contex
     private val _boundRemoteName = MutableStateFlow<String?>(null)
     val boundRemoteName: StateFlow<String?> = _boundRemoteName.asStateFlow()
 
-    private val _scannedRemotes = MutableStateFlow<List<BleDeviceItem>>(emptyList())
-    val scannedRemotes: StateFlow<List<BleDeviceItem>> = _scannedRemotes.asStateFlow()
-
     private val _lastClickText = MutableStateFlow<String?>("No clicks registered yet")
     val lastClickText: StateFlow<String?> = _lastClickText.asStateFlow()
 
     private val _doubleClickMode = MutableStateFlow("FD_TOGGLE")
     val doubleClickMode: StateFlow<String> = _doubleClickMode.asStateFlow()
 
-    private val foundRemotesMap = mutableMapOf<String, BleDeviceItem>()
     private var lastSequenceToken = -1
     private var lastButtonCode = -1
 
@@ -122,12 +118,20 @@ class MagicshineRemoteManager private constructor(private val appContext: Contex
         }
     }
 
-    fun startScanForRemotes() {
-        startLowLatencyScan()
+    fun pauseScan() {
+        stopScan()
+    }
+
+    fun resumeScan() {
+        if (!_boundRemoteMac.value.isNullOrBlank()) {
+            startLowLatencyScan()
+        }
     }
 
     @SuppressLint("MissingPermission")
     private fun startLowLatencyScan() {
+        val boundMac = _boundRemoteMac.value
+        if (boundMac.isNullOrBlank()) return
         if (bluetoothAdapter == null || !bluetoothAdapter!!.isEnabled) return
         val scanner = bluetoothAdapter?.bluetoothLeScanner ?: return
 
@@ -136,14 +140,14 @@ class MagicshineRemoteManager private constructor(private val appContext: Contex
         } catch (_: Exception) {}
 
         val settings = ScanSettings.Builder()
-            .setScanMode(ScanSettings.SCAN_MODE_LOW_LATENCY) // Instant 15ms ScanRecord keypress capture
+            .setScanMode(ScanSettings.SCAN_MODE_LOW_LATENCY)
             .build()
 
         try {
             scanner.startScan(null, settings, scanCallback)
             isScanningInternal = true
             _connectionState.value = ConnectionState.CONNECTED
-            Log.i(TAG, "Magicshine BLE Low Latency ScanRecord engine ACTIVE.")
+            Log.i(TAG, "Magicshine BLE Low Latency ScanRecord engine ACTIVE for MAC: $boundMac")
         } catch (e: Exception) {
             Log.e(TAG, "Error starting scan: ${e.message}")
             _connectionState.value = ConnectionState.DISCONNECTED
@@ -167,27 +171,14 @@ class MagicshineRemoteManager private constructor(private val appContext: Contex
             result ?: return
             val device = result.device ?: return
             val address = device.address ?: return
-            val realName = device.name ?: result.scanRecord?.deviceName ?: return
             val boundMac = _boundRemoteMac.value
 
-            // 1. Bound Device Check: If packet is from our bound M0-C0 remote
             if (!boundMac.isNullOrBlank() && address.equals(boundMac, ignoreCase = true)) {
                 _connectionState.value = ConnectionState.CONNECTED
                 val bytes = extractSDataBytes(result)
                 if (bytes.isNotEmpty()) {
                     handleSDataReceived(bytes)
                 }
-                return
-            }
-
-            // 2. Unbound Scanning Mode: Strictly filter M0-C0 / MJ_6558 ONLY
-            val upper = realName.uppercase()
-            val isStrictMj6558 = upper.contains("M0-C0") || upper.contains("MJ_6558") || upper.contains("MJ-6558") || upper.contains("MJ6558")
-
-            if (isStrictMj6558) {
-                val item = BleDeviceItem(name = realName, address = address, rssi = result.rssi)
-                foundRemotesMap[address] = item
-                _scannedRemotes.value = foundRemotesMap.values.toList()
             }
         }
     }

@@ -109,7 +109,6 @@ fun EdsChargeLightScreen(wheeltopManager: WheeltopManager, remoteManager: Magics
     val remoteConnectionState by remoteManager.connectionState.collectAsState()
     val boundRemoteMac by remoteManager.boundRemoteMac.collectAsState()
     val boundRemoteName by remoteManager.boundRemoteName.collectAsState()
-    val scannedRemotes by remoteManager.scannedRemotes.collectAsState()
     val lastClickText by remoteManager.lastClickText.collectAsState()
     val doubleClickMode by remoteManager.doubleClickMode.collectAsState()
 
@@ -132,124 +131,104 @@ fun EdsChargeLightScreen(wheeltopManager: WheeltopManager, remoteManager: Magics
 
     val modelName = boundName ?: "EDS TX"
 
-    // Auto-scan for remotes if no remote is bound
-    LaunchedEffect(boundRemoteMac) {
-        if (boundRemoteMac.isNullOrBlank()) {
-            remoteManager.startScanForRemotes()
-        }
-    }
-
     val scrollState = rememberScrollState()
 
     Column(
         modifier = Modifier
             .fillMaxSize()
             .verticalScroll(scrollState)
-            .padding(14.dp),
-        verticalArrangement = Arrangement.SpaceBetween
+            .padding(14.dp)
     ) {
-        Column {
+        Text(
+            text = "KMagicWheeltopBlip",
+            fontSize = 20.sp,
+            fontWeight = FontWeight.Bold,
+            color = Color(0xFF1E1B2E)
+        )
+
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(bottom = 6.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
             Text(
-                text = "KMagicWheeltopBlip",
-                fontSize = 20.sp,
-                fontWeight = FontWeight.Bold,
-                color = Color(0xFF1E1B2E)
+                text = "v0.0.3 • Ham 🐵🚀 Release",
+                fontSize = 12.sp,
+                color = Color(0xFF5E546E)
             )
 
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(bottom = 6.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                    text = "v0.0.3 • Ham 🐵🚀 Release",
-                    fontSize = 12.sp,
-                    color = Color(0xFF5E546E)
-                )
+            Image(
+                painter = painterResource(id = R.drawable.ic_logo),
+                contentDescription = "Logo",
+                contentScale = ContentScale.Fit,
+                modifier = Modifier.size(44.dp)
+            )
+        }
 
-                Image(
-                    painter = painterResource(id = R.drawable.ic_logo),
-                    contentDescription = "Logo",
-                    contentScale = ContentScale.Fit,
-                    modifier = Modifier.size(44.dp)
-                )
+        Text(
+            text = "Wheeltop EDS",
+            fontSize = 15.sp,
+            fontWeight = FontWeight.Bold,
+            color = Color(0xFF1E1B2E),
+            modifier = Modifier.padding(vertical = 4.dp)
+        )
+
+        GattMasterCard(
+            deviceName = modelName,
+            statusText = statusText,
+            isMonitored = isMonitored,
+            rawBlockText = rawBlockText,
+            blockStatusText = blockStatusText,
+            onMonitoredChange = { enabled ->
+                val mac = if (boundMac.isNullOrBlank()) "D4:85:A1:BE:24:3B" else boundMac!!
+                if (boundMac.isNullOrBlank()) {
+                    wheeltopManager.bindDevice(mac, "EDS TX")
+                }
+                wheeltopManager.toggleMonitoring(enabled)
             }
+        )
 
-            Text(
-                text = "Wheeltop EDS",
-                fontSize = 15.sp,
-                fontWeight = FontWeight.Bold,
-                color = Color(0xFF1E1B2E),
-                modifier = Modifier.padding(vertical = 4.dp)
+        Spacer(modifier = Modifier.height(14.dp))
+
+        Text(
+            text = "Magicshine Remote",
+            fontSize = 15.sp,
+            fontWeight = FontWeight.Bold,
+            color = Color(0xFF1E1B2E),
+            modifier = Modifier.padding(vertical = 6.dp)
+        )
+
+        val displayRemotes = listOf(
+            BleDeviceItem(
+                name = boundRemoteName ?: "M0-C0 MJ_6558",
+                address = boundRemoteMac ?: "60:03:00:08:CC:77",
+                rssi = 0
             )
+        )
 
-            GattMasterCard(
-                deviceName = modelName,
-                statusText = statusText,
-                isMonitored = isMonitored,
-                rawBlockText = rawBlockText,
-                blockStatusText = blockStatusText,
-                onMonitoredChange = { enabled ->
-                    val mac = if (boundMac.isNullOrBlank()) "D4:85:A1:BE:24:3B" else boundMac!!
-                    if (boundMac.isNullOrBlank()) {
-                        wheeltopManager.bindDevice(mac, "EDS TX")
+        displayRemotes.forEach { remoteItem ->
+            val isThisRemoteBound = boundRemoteMac.equals(remoteItem.address, ignoreCase = true)
+            RemoteCard(
+                deviceName = remoteItem.name,
+                deviceMac = remoteItem.address,
+                statusText = if (isThisRemoteBound) remoteStatusText else "Scanning for Remote...",
+                isBound = isThisRemoteBound,
+                lastClickText = if (isThisRemoteBound) lastClickText else null,
+                doubleClickMode = doubleClickMode,
+                onDoubleClickModeChange = { mode ->
+                    remoteManager.setDoubleClickMode(mode)
+                },
+                onBindChange = { enabled ->
+                    if (enabled) {
+                        remoteManager.bindRemote(remoteItem.address, remoteItem.name)
+                    } else {
+                        remoteManager.unbindRemote()
                     }
-                    wheeltopManager.toggleMonitoring(enabled)
                 }
             )
-
-            Spacer(modifier = Modifier.height(14.dp))
-
-            Text(
-                text = "Magicshine Remote",
-                fontSize = 15.sp,
-                fontWeight = FontWeight.Bold,
-                color = Color(0xFF1E1B2E),
-                modifier = Modifier.padding(vertical = 6.dp)
-            )
-
-            val displayRemotes = when {
-                !boundRemoteMac.isNullOrBlank() -> listOf(
-                    BleDeviceItem(
-                        name = boundRemoteName ?: "M0-C0 MJ_6558",
-                        address = boundRemoteMac!!,
-                        rssi = 0
-                    )
-                )
-                scannedRemotes.isNotEmpty() -> scannedRemotes
-                else -> listOf(
-                    BleDeviceItem(
-                        name = "M0-C0 MJ_6558",
-                        address = "60:03:00:08:CC:77",
-                        rssi = 0
-                    )
-                )
-            }
-
-            displayRemotes.forEach { remoteItem ->
-                val isThisRemoteBound = boundRemoteMac.equals(remoteItem.address, ignoreCase = true)
-                RemoteCard(
-                    deviceName = remoteItem.name,
-                    deviceMac = remoteItem.address,
-                    statusText = if (isThisRemoteBound) remoteStatusText else "Scanning for Remote...",
-                    isBound = isThisRemoteBound,
-                    lastClickText = if (isThisRemoteBound) lastClickText else null,
-                    doubleClickMode = doubleClickMode,
-                    onDoubleClickModeChange = { mode ->
-                        remoteManager.setDoubleClickMode(mode)
-                    },
-                    onBindChange = { enabled ->
-                        if (enabled) {
-                            remoteManager.bindRemote(remoteItem.address, remoteItem.name)
-                        } else {
-                            remoteManager.unbindRemote()
-                        }
-                    }
-                )
-                Spacer(modifier = Modifier.height(10.dp))
-            }
+            Spacer(modifier = Modifier.height(10.dp))
         }
     }
 }
