@@ -31,7 +31,8 @@
 
         <service
             android:name=".service.KarooEdsChargeExtensionService"
-            android:exported="true">
+            android:exported="true"
+            android:permission="io.hammerhead.karooext.permission.KAROO_EXTENSION">
             <intent-filter>
                 <action android:name="io.hammerhead.karooext.KAROO_EXTENSION" />
             </intent-filter>
