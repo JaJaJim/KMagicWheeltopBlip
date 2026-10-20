@@ -19,7 +19,7 @@ class KarooEdsChargeExtensionService : KarooExtension("kmagic-wheeltop-blip", Bu
 
     companion object {
         const val EXTENSION_ID = "kmagic-wheeltop-blip"
-        const val BATTERY_WIDGET_TYPE_ID = "wheeltop-battery-widget"
+        const val BATTERY_WIDGET_TYPE_ID = "kmagic-wheeltop-blip"
     }
 
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)

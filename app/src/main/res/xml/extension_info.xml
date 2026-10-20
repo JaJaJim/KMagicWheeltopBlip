@@ -4,7 +4,7 @@
     displayName="KMagicWheeltopBlip"
     icon="@drawable/ic_logo">
     <data-type
-        typeId="wheeltop-battery-widget"
-        displayName="WheelTop Batteries"
+        typeId="kmagic-wheeltop-blip"
+        displayName="KMagicWheeltopBlip"
         graphical="true" />
 </extension>
