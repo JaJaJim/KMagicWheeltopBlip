@@ -75,6 +75,7 @@ class WheeltopManager private constructor(context: Context) {
     private var initJob: Job? = null
     private var connectTimeoutJob: Job? = null
     private var blockWatchdogJob: Job? = null
+    private var wakeUpPingJob: Job? = null
     private var pullRetryCount = 0
 
     @Volatile
@@ -152,6 +153,38 @@ class WheeltopManager private constructor(context: Context) {
         scope.launch {
             remotePreferences.lastGattTimestamp.collectLatest { timestamp ->
                 _lastGattTimestamp.value = timestamp
+            }
+        }
+
+        // Keep-Alive Ping Ticker when Active use as Blip is enabled
+        scope.launch {
+            remotePreferences.activeUseAsBlip.collectLatest { active ->
+                wakeUpPingJob?.cancel()
+                if (active) {
+                    val boundMac = _boundMacAddress.value
+                    if (!boundMac.isNullOrBlank() && _connectionState.value == ConnectionState.DISCONNECTED) {
+                        connectToBoundDevice(boundMac)
+                    } else if (_connectionState.value == ConnectionState.CONNECTED) {
+                        start3SecondWakeUpPing()
+                    }
+                } else {
+                    if (!_isPullingGattBlocks.value && _connectionState.value == ConnectionState.CONNECTED) {
+                        disconnectGatt()
+                    }
+                }
+            }
+        }
+    }
+
+    private fun start3SecondWakeUpPing() {
+        wakeUpPingJob?.cancel()
+        wakeUpPingJob = scope.launch(Dispatchers.IO) {
+            while (_connectionState.value == ConnectionState.CONNECTED && remoteManager.isActiveUseAsBlip.value) {
+                delay(3000)
+                if (_connectionState.value == ConnectionState.CONNECTED && !isShiftInProgress) {
+                    Log.d(TAG, "===> [3s KEEP-ALIVE PING] Sending 1-byte 0xFA Pipe Opener to keep WheelTop MCU awake...")
+                    sendAppProtocolCommand("3s Keep-Alive", 0xFA, byteArrayOf(0x80.toByte()))
+                }
             }
         }
     }
@@ -247,20 +280,27 @@ class WheeltopManager private constructor(context: Context) {
         pullRetryCount = 0
         asciiBuffer.clear()
         pingPongStep = 0
-        _blockStatusText.value = "Connecting GATT..."
 
         connectTimeoutJob?.cancel()
         connectTimeoutJob = scope.launch(Dispatchers.IO) {
-            delay(10_000) // 10-second hard safety timeout
+            delay(8_000) // 8-second hard safety timeout
             if (_isPullingGattBlocks.value) {
-                Log.e(TAG, "[PULL TIMEOUT] GATT block pull timed out after 10s. Disconnecting...")
+                Log.e(TAG, "[PULL TIMEOUT] GATT block pull timed out after 8s. Performing 2s modem cooldown...")
                 _isPullingGattBlocks.value = false
                 _blockStatusText.value = "Pull Timed Out / Try Again"
                 disconnectGatt()
+                delay(2000) // Qualcomm modem 2s cooldown
             }
         }
 
-        connectToBoundDevice(mac)
+        if (activeGatt != null && _connectionState.value == ConnectionState.CONNECTED) {
+            Log.i(TAG, "GATT already CONNECTED. Triggering fast block readout directly...")
+            _blockStatusText.value = "Authenticating..."
+            startInitializationSequence()
+        } else {
+            _blockStatusText.value = "Connecting GATT..."
+            connectToBoundDevice(mac)
+        }
     }
 
     @Synchronized
@@ -311,6 +351,8 @@ class WheeltopManager private constructor(context: Context) {
         connectTimeoutJob = null
         initJob?.cancel()
         initJob = null
+        wakeUpPingJob?.cancel()
+        wakeUpPingJob = null
         isLatched = false
 
         try {
@@ -515,8 +557,13 @@ class WheeltopManager private constructor(context: Context) {
                     remotePreferences.saveGattBlockDataset(fullAscii, currentTimestamp)
                 }
 
-                Log.i(TAG, "Disconnecting GATT socket after successful block pull...")
-                disconnectGatt()
+                if (!remoteManager.isActiveUseAsBlip.value) {
+                    Log.i(TAG, "Active use as Blip is INACTIVE. Disconnecting GATT socket after successful block pull...")
+                    disconnectGatt()
+                } else {
+                    Log.i(TAG, "Active use as Blip is ACTIVE. Keeping GATT open & starting 3s Keep-Alive Ping...")
+                    start3SecondWakeUpPing()
+                }
 
                 remoteManager.resumeScan()
             }
@@ -625,22 +672,24 @@ class WheeltopManager private constructor(context: Context) {
     }
 
     fun shiftRear(direction: Int) {
-        isShiftInProgress = true
+        val mac = _boundMacAddress.value ?: return
+        if (activeGatt == null || _connectionState.value != ConnectionState.CONNECTED) {
+            connectToBoundDevice(mac)
+        }
         scope.launch(Dispatchers.IO) {
-            Log.i(TAG, "[ADB SHIFT] Shifting Rear Derailleur (RD) direction: $direction")
-            sendAppProtocolCommand("Rear Shift ($direction)", 0x99, byteArrayOf(direction.toByte()))
-            delay(1200)
-            isShiftInProgress = false
+            val payload = byteArrayOf(0x00, 0x00, direction.toByte())
+            sendAppProtocolCommand("shiftRear($direction)", 0x98, payload)
         }
     }
 
     fun toggleFrontDerailleur() {
-        isShiftInProgress = true
+        val mac = _boundMacAddress.value ?: return
+        if (activeGatt == null || _connectionState.value != ConnectionState.CONNECTED) {
+            connectToBoundDevice(mac)
+        }
         scope.launch(Dispatchers.IO) {
-            Log.i(TAG, "[ADB SHIFT] Toggling Front Derailleur (FD)...")
-            sendAppProtocolCommand("Front Derailleur Toggle", 0x89, byteArrayOf(0x02.toByte()))
-            delay(1200)
-            isShiftInProgress = false
+            val payload = byteArrayOf(0x00, 0x00, 0x02)
+            sendAppProtocolCommand("toggleFrontDerailleur", 0x88, payload)
         }
     }
 }

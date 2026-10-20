@@ -117,6 +117,7 @@ fun EdsChargeLightScreen(wheeltopManager: WheeltopManager, remoteManager: Magics
     val scannedRemotes by remoteManager.scannedRemotes.collectAsState()
     val lastClickText by remoteManager.lastClickText.collectAsState()
     val doubleClickMode by remoteManager.doubleClickMode.collectAsState()
+    val isActiveUseAsBlip by remoteManager.isActiveUseAsBlip.collectAsState()
 
     val scrollState = rememberScrollState()
 
@@ -282,10 +283,14 @@ fun EdsChargeLightScreen(wheeltopManager: WheeltopManager, remoteManager: Magics
                     deviceName = remoteItem.name,
                     deviceMac = remoteItem.address,
                     isBound = isThisRemoteBound,
+                    isActiveUseAsBlip = isActiveUseAsBlip,
                     lastClickText = if (isThisRemoteBound) lastClickText else null,
                     doubleClickMode = doubleClickMode,
                     onDoubleClickModeChange = { mode ->
                         remoteManager.setDoubleClickMode(mode)
+                    },
+                    onActiveUseAsBlipChange = { active ->
+                        remoteManager.setActiveUseAsBlip(active)
                     },
                     onBindChange = { enabled ->
                         if (enabled) {
@@ -423,9 +428,11 @@ private fun RemoteCard(
     deviceName: String,
     deviceMac: String,
     isBound: Boolean,
+    isActiveUseAsBlip: Boolean,
     lastClickText: String?,
     doubleClickMode: String,
     onDoubleClickModeChange: (String) -> Unit,
+    onActiveUseAsBlipChange: (Boolean) -> Unit,
     onBindChange: (Boolean) -> Unit
 ) {
     val containerColor = if (isBound) Color(0x3F45DDA0) else Color(0x3FE53935)
@@ -514,7 +521,42 @@ private fun RemoteCard(
                 onSelect = { onDoubleClickModeChange("BURST_SHIFT") }
             )
 
-            Spacer(modifier = Modifier.height(12.dp))
+            Spacer(modifier = Modifier.height(10.dp))
+
+            if (isBound) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "Active Use as Blip",
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = Color(0xFF1E1B2E)
+                        )
+                        Text(
+                            text = "Keeps persistent connection with 3s Keep-Alive for instant shifting",
+                            fontSize = 10.sp,
+                            color = Color(0xFF5E546E)
+                        )
+                    }
+
+                    Switch(
+                        checked = isActiveUseAsBlip,
+                        onCheckedChange = onActiveUseAsBlipChange,
+                        colors = SwitchDefaults.colors(
+                            checkedThumbColor = Color.White,
+                            checkedTrackColor = Color(0xFF007A5E),
+                            uncheckedThumbColor = Color.White,
+                            uncheckedTrackColor = Color(0xFF777777)
+                        )
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(12.dp))
+            }
 
             Row(
                 modifier = Modifier.fillMaxWidth(),

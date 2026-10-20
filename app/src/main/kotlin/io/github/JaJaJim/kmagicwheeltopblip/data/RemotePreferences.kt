@@ -22,6 +22,7 @@ class RemotePreferences(private val context: Context) {
         private val BOUND_REMOTE_NAME_KEY = stringPreferencesKey("bound_remote_name")
         private val IS_MONITORED_KEY = booleanPreferencesKey("is_monitored")
         private val DOUBLE_CLICK_MODE_KEY = stringPreferencesKey("double_click_mode")
+        private val ACTIVE_USE_AS_BLIP_KEY = booleanPreferencesKey("active_use_as_blip")
         private val LAST_GATT_ASCII_TEXT_KEY = stringPreferencesKey("last_gatt_ascii_text")
         private val LAST_GATT_TIMESTAMP_KEY = longPreferencesKey("last_gatt_timestamp")
         private val LAST_BUILD_SIGNATURE_KEY = stringPreferencesKey("last_build_signature")
@@ -49,6 +50,10 @@ class RemotePreferences(private val context: Context) {
 
     val doubleClickMode: Flow<String> = context.dataStore.data.map { preferences ->
         preferences[DOUBLE_CLICK_MODE_KEY] ?: "FD_TOGGLE"
+    }
+
+    val activeUseAsBlip: Flow<Boolean> = context.dataStore.data.map { preferences ->
+        preferences[ACTIVE_USE_AS_BLIP_KEY] ?: false
     }
 
     val lastGattAsciiText: Flow<String?> = context.dataStore.data.map { preferences ->
@@ -90,6 +95,12 @@ class RemotePreferences(private val context: Context) {
         }
     }
 
+    suspend fun saveActiveUseAsBlip(active: Boolean) {
+        context.dataStore.edit { preferences ->
+            preferences[ACTIVE_USE_AS_BLIP_KEY] = active
+        }
+    }
+
     suspend fun saveGattBlockDataset(asciiText: String, timestamp: Long) {
         context.dataStore.edit { preferences ->
             preferences[LAST_GATT_ASCII_TEXT_KEY] = asciiText
@@ -117,6 +128,7 @@ class RemotePreferences(private val context: Context) {
         context.dataStore.edit { preferences ->
             preferences.remove(BOUND_REMOTE_MAC_KEY)
             preferences.remove(BOUND_REMOTE_NAME_KEY)
+            preferences[ACTIVE_USE_AS_BLIP_KEY] = false
         }
     }
 }
