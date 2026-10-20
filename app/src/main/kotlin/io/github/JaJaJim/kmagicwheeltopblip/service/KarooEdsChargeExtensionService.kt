@@ -1,13 +1,20 @@
 package io.github.JaJaJim.kmagicwheeltopblip.service
 
+import android.content.Context
+import android.view.View
+import android.widget.RemoteViews
 import io.github.JaJaJim.kmagicwheeltopblip.BuildConfig
+import io.github.JaJaJim.kmagicwheeltopblip.R
 import io.github.JaJaJim.kmagicwheeltopblip.ble.WheeltopManager
 import io.hammerhead.karooext.extension.DataTypeImpl
 import io.hammerhead.karooext.extension.KarooExtension
 import io.hammerhead.karooext.internal.Emitter
+import io.hammerhead.karooext.internal.ViewEmitter
 import io.hammerhead.karooext.models.DataPoint
 import io.hammerhead.karooext.models.DataType
 import io.hammerhead.karooext.models.StreamState
+import io.hammerhead.karooext.models.UpdateGraphicConfig
+import io.hammerhead.karooext.models.ViewConfig
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -79,10 +86,88 @@ class KarooEdsChargeExtensionService : KarooExtension("kmagic-wheeltop-blip", Bu
             }
         }
 
-        private fun parseAsciiVoltages(text: String): Map<String, Double> {
-            val resultMap = mutableMapOf<String, Double>()
-            val kvMap = mutableMapOf<String, Float>()
+        override fun startView(context: Context, config: ViewConfig, emitter: ViewEmitter) {
+            emitter.onNext(UpdateGraphicConfig(showHeader = true))
 
+            val job = serviceScope.launch(Dispatchers.Main) {
+                wheeltopManager.lastGattAsciiText.collectLatest { asciiText ->
+                    val remoteViews = RemoteViews(context.packageName, R.layout.wheeltop_widget_view)
+
+                    if (!asciiText.isNullOrBlank()) {
+                        val parsedMap = parseAsciiMap(asciiText)
+                        val boundName = wheeltopManager.boundDeviceName.value ?: "EDS TX"
+                        val isOx = boundName.contains("OX", ignoreCase = true) || parsedMap.containsKey("POWER_1")
+                        val isGx = boundName.contains("GX", ignoreCase = true) || boundName.contains("GEX", ignoreCase = true) || (parsedMap.containsKey("L_POWER") && (parsedMap["Q_POWER"] ?: 0f) <= 1.0f)
+
+                        if (isOx) {
+                            // Layout C: EDS OX (2 Centered Rows)
+                            val rm = parsedMap["POWER_1"] ?: 0f
+                            val rd = parsedMap["POWER_2"] ?: 0f
+
+                            remoteViews.setViewVisibility(R.id.txt_top_left, View.GONE)
+                            remoteViews.setViewVisibility(R.id.txt_top_right, View.GONE)
+                            remoteViews.setViewVisibility(R.id.txt_top_center, View.VISIBLE)
+
+                            remoteViews.setViewVisibility(R.id.txt_bottom_left, View.GONE)
+                            remoteViews.setViewVisibility(R.id.txt_bottom_right, View.GONE)
+                            remoteViews.setViewVisibility(R.id.txt_bottom_center, View.VISIBLE)
+
+                            remoteViews.setTextViewText(R.id.txt_top_center, "RM: %.2fV".format(rm))
+                            remoteViews.setTextViewText(R.id.txt_bottom_center, "RD: %.2fV".format(rd))
+                        } else if (isGx) {
+                            // Layout B: EDS GX / GeX (2 Rows: Shifters top, RD centered bottom)
+                            val sl = parsedMap["L_POWER"] ?: 0f
+                            val sr = parsedMap["R_POWER"] ?: 0f
+                            val rd = parsedMap["H_POWER"] ?: 0f
+
+                            remoteViews.setViewVisibility(R.id.txt_top_left, View.VISIBLE)
+                            remoteViews.setViewVisibility(R.id.txt_top_right, View.VISIBLE)
+                            remoteViews.setViewVisibility(R.id.txt_top_center, View.GONE)
+
+                            remoteViews.setViewVisibility(R.id.txt_bottom_left, View.GONE)
+                            remoteViews.setViewVisibility(R.id.txt_bottom_right, View.GONE)
+                            remoteViews.setViewVisibility(R.id.txt_bottom_center, View.VISIBLE)
+
+                            remoteViews.setTextViewText(R.id.txt_top_left, "SL: %.2fV".format(sl))
+                            remoteViews.setTextViewText(R.id.txt_top_right, "SR: %.2fV".format(sr))
+                            remoteViews.setTextViewText(R.id.txt_bottom_center, "RD: %.2fV".format(rd))
+                        } else {
+                            // Layout A: EDS TX (4 Quads / 2x2 Grid)
+                            val sl = parsedMap["L_POWER"] ?: 0f
+                            val sr = parsedMap["R_POWER"] ?: 0f
+                            val fd = parsedMap["Q_POWER"] ?: 0f
+                            val rd = parsedMap["H_POWER"] ?: 0f
+
+                            remoteViews.setViewVisibility(R.id.txt_top_left, View.VISIBLE)
+                            remoteViews.setViewVisibility(R.id.txt_top_right, View.VISIBLE)
+                            remoteViews.setViewVisibility(R.id.txt_top_center, View.GONE)
+
+                            remoteViews.setViewVisibility(R.id.txt_bottom_left, View.VISIBLE)
+                            remoteViews.setViewVisibility(R.id.txt_bottom_right, View.VISIBLE)
+                            remoteViews.setViewVisibility(R.id.txt_bottom_center, View.GONE)
+
+                            remoteViews.setTextViewText(R.id.txt_top_left, "SL: %.2fV".format(sl))
+                            remoteViews.setTextViewText(R.id.txt_top_right, "SR: %.2fV".format(sr))
+                            remoteViews.setTextViewText(R.id.txt_bottom_left, "FD: %.2fV".format(fd))
+                            remoteViews.setTextViewText(R.id.txt_bottom_right, "RD: %.2fV".format(rd))
+                        }
+                    } else {
+                        // Searching / Initial State
+                        remoteViews.setTextViewText(R.id.txt_top_center, "WheelTop")
+                        remoteViews.setTextViewText(R.id.txt_bottom_center, "Searching...")
+                    }
+
+                    emitter.updateView(remoteViews)
+                }
+            }
+
+            emitter.setCancellable {
+                job.cancel()
+            }
+        }
+
+        private fun parseAsciiMap(text: String): Map<String, Float> {
+            val kvMap = mutableMapOf<String, Float>()
             val parts = text.split(",", ";", "\n", "\r")
             for (part in parts) {
                 val kv = part.split(":", "=")
@@ -95,6 +180,12 @@ class KarooEdsChargeExtensionService : KarooExtension("kmagic-wheeltop-blip", Bu
                     }
                 }
             }
+            return kvMap
+        }
+
+        private fun parseAsciiVoltages(text: String): Map<String, Double> {
+            val resultMap = mutableMapOf<String, Double>()
+            val kvMap = parseAsciiMap(text)
 
             // 1. EDS OX Model (contains POWER_1)
             if (kvMap.containsKey("POWER_1")) {
