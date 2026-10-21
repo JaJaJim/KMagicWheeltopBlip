@@ -155,37 +155,6 @@ class WheeltopManager private constructor(context: Context) {
                 }
             }
         }
-
-        scope.launch {
-            remotePreferences.lastGattAsciiText.collectLatest { text ->
-                _lastGattAsciiText.value = text
-            }
-        }
-
-        scope.launch {
-            remotePreferences.lastGattTimestamp.collectLatest { timestamp ->
-                _lastGattTimestamp.value = timestamp
-            }
-        }
-
-        // Keep-Alive Ping Ticker when Active use as Blip AND Ride Active are enabled
-        scope.launch {
-            remotePreferences.activeUseAsBlip.collectLatest { active ->
-                wakeUpPingJob?.cancel()
-                if (active && _isRideActive.value) {
-                    val boundMac = _boundMacAddress.value
-                    if (!boundMac.isNullOrBlank() && _connectionState.value == ConnectionState.DISCONNECTED) {
-                        connectToBoundDevice(boundMac)
-                    } else if (_connectionState.value == ConnectionState.CONNECTED) {
-                        start3SecondWakeUpPing()
-                    }
-                } else if (!active) {
-                    if (!_isPullingGattBlocks.value && _connectionState.value == ConnectionState.CONNECTED) {
-                        disconnectGatt()
-                    }
-                }
-            }
-        }
     }
 
     fun requestRideDatafieldGattAccess() {
@@ -220,7 +189,7 @@ class WheeltopManager private constructor(context: Context) {
         Log.i(TAG, "===> [RIDE LIFECYCLE] setIsRideActive: $active")
         if (active) {
             val boundMac = _boundMacAddress.value
-            if (!boundMac.isNullOrBlank() && remoteManager.isActiveUseAsBlip.value) {
+            if (!boundMac.isNullOrBlank()) {
                 if (_connectionState.value == ConnectionState.DISCONNECTED) {
                     connectToBoundDevice(boundMac)
                 } else if (_connectionState.value == ConnectionState.CONNECTED) {
@@ -242,7 +211,6 @@ class WheeltopManager private constructor(context: Context) {
         wakeUpPingJob = scope.launch(Dispatchers.IO) {
             while (
                 _connectionState.value == ConnectionState.CONNECTED &&
-                remoteManager.isActiveUseAsBlip.value &&
                 _isRideActive.value
             ) {
                 delay(3000)
@@ -647,15 +615,11 @@ class WheeltopManager private constructor(context: Context) {
                 _lastGattTimestamp.value = currentTimestamp
                 _isPullingGattBlocks.value = false
 
-                scope.launch {
-                    remotePreferences.saveGattBlockDataset(fullAscii, currentTimestamp)
-                }
-
-                if (!remoteManager.isActiveUseAsBlip.value || !_isRideActive.value) {
-                    Log.i(TAG, "Active use as Blip or Ride Active is INACTIVE. Disconnecting GATT socket after successful block pull...")
+                if (!_isRideActive.value) {
+                    Log.i(TAG, "Ride Active is INACTIVE. Disconnecting GATT socket after successful block pull...")
                     disconnectGatt()
                 } else {
-                    Log.i(TAG, "Active use as Blip AND Ride Active are TRUE. Keeping GATT open & starting 3s Keep-Alive Ping...")
+                    Log.i(TAG, "Ride Active is TRUE. Keeping GATT open & starting 3s Keep-Alive Ping...")
                     start3SecondWakeUpPing()
                 }
 

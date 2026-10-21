@@ -3,9 +3,7 @@ package io.github.JaJaJim.kmagicwheeltopblip.data
 import android.content.Context
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
-import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
-import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import kotlinx.coroutines.flow.Flow
@@ -20,11 +18,7 @@ class RemotePreferences(private val context: Context) {
         private val BOUND_WHEELTOP_NAME_KEY = stringPreferencesKey("bound_wheeltop_name")
         private val BOUND_REMOTE_MAC_KEY = stringPreferencesKey("bound_remote_mac")
         private val BOUND_REMOTE_NAME_KEY = stringPreferencesKey("bound_remote_name")
-        private val IS_MONITORED_KEY = booleanPreferencesKey("is_monitored")
         private val DOUBLE_CLICK_MODE_KEY = stringPreferencesKey("double_click_mode")
-        private val ACTIVE_USE_AS_BLIP_KEY = booleanPreferencesKey("active_use_as_blip")
-        private val LAST_GATT_ASCII_TEXT_KEY = stringPreferencesKey("last_gatt_ascii_text")
-        private val LAST_GATT_TIMESTAMP_KEY = longPreferencesKey("last_gatt_timestamp")
         private val LAST_BUILD_SIGNATURE_KEY = stringPreferencesKey("last_build_signature")
     }
 
@@ -44,24 +38,8 @@ class RemotePreferences(private val context: Context) {
         preferences[BOUND_REMOTE_NAME_KEY]
     }
 
-    val isMonitored: Flow<Boolean> = context.dataStore.data.map { preferences ->
-        preferences[IS_MONITORED_KEY] ?: false
-    }
-
     val doubleClickMode: Flow<String> = context.dataStore.data.map { preferences ->
         preferences[DOUBLE_CLICK_MODE_KEY] ?: "FD_TOGGLE"
-    }
-
-    val activeUseAsBlip: Flow<Boolean> = context.dataStore.data.map { preferences ->
-        preferences[ACTIVE_USE_AS_BLIP_KEY] ?: false
-    }
-
-    val lastGattAsciiText: Flow<String?> = context.dataStore.data.map { preferences ->
-        preferences[LAST_GATT_ASCII_TEXT_KEY]
-    }
-
-    val lastGattTimestamp: Flow<Long> = context.dataStore.data.map { preferences ->
-        preferences[LAST_GATT_TIMESTAMP_KEY] ?: 0L
     }
 
     suspend fun checkAndClearOnNewBuild(buildSignature: String) {
@@ -78,7 +56,6 @@ class RemotePreferences(private val context: Context) {
         context.dataStore.edit { preferences ->
             preferences[BOUND_WHEELTOP_MAC_KEY] = mac
             preferences[BOUND_WHEELTOP_NAME_KEY] = name
-            preferences[IS_MONITORED_KEY] = false
         }
     }
 
@@ -86,25 +63,6 @@ class RemotePreferences(private val context: Context) {
         context.dataStore.edit { preferences ->
             preferences[BOUND_REMOTE_MAC_KEY] = mac
             preferences[BOUND_REMOTE_NAME_KEY] = name
-        }
-    }
-
-    suspend fun saveIsMonitored(monitored: Boolean) {
-        context.dataStore.edit { preferences ->
-            preferences[IS_MONITORED_KEY] = monitored
-        }
-    }
-
-    suspend fun saveActiveUseAsBlip(active: Boolean) {
-        context.dataStore.edit { preferences ->
-            preferences[ACTIVE_USE_AS_BLIP_KEY] = active
-        }
-    }
-
-    suspend fun saveGattBlockDataset(asciiText: String, timestamp: Long) {
-        context.dataStore.edit { preferences ->
-            preferences[LAST_GATT_ASCII_TEXT_KEY] = asciiText
-            preferences[LAST_GATT_TIMESTAMP_KEY] = timestamp
         }
     }
 
@@ -118,9 +76,6 @@ class RemotePreferences(private val context: Context) {
         context.dataStore.edit { preferences ->
             preferences.remove(BOUND_WHEELTOP_MAC_KEY)
             preferences.remove(BOUND_WHEELTOP_NAME_KEY)
-            preferences.remove(LAST_GATT_ASCII_TEXT_KEY)
-            preferences.remove(LAST_GATT_TIMESTAMP_KEY)
-            preferences[IS_MONITORED_KEY] = false
         }
     }
 
@@ -128,7 +83,6 @@ class RemotePreferences(private val context: Context) {
         context.dataStore.edit { preferences ->
             preferences.remove(BOUND_REMOTE_MAC_KEY)
             preferences.remove(BOUND_REMOTE_NAME_KEY)
-            preferences[ACTIVE_USE_AS_BLIP_KEY] = false
         }
     }
 }

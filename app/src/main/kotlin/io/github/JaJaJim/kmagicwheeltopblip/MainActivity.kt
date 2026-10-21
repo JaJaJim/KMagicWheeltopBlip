@@ -39,7 +39,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.painterResource
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -47,9 +46,6 @@ import androidx.core.content.ContextCompat
 import io.github.JaJaJim.kmagicwheeltopblip.ble.BleDeviceItem
 import io.github.JaJaJim.kmagicwheeltopblip.ble.MagicshineRemoteManager
 import io.github.JaJaJim.kmagicwheeltopblip.ble.WheeltopManager
-import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.Locale
 
 class MainActivity : ComponentActivity() {
 
@@ -106,10 +102,6 @@ fun EdsChargeLightScreen(wheeltopManager: WheeltopManager, remoteManager: Magics
     val boundName by wheeltopManager.boundDeviceName.collectAsState()
     val isScanningDerailleurs by wheeltopManager.isScanningDerailleurs.collectAsState()
     val scannedDerailleurs by wheeltopManager.scannedDerailleurs.collectAsState()
-    val isPullingGattBlocks by wheeltopManager.isPullingGattBlocks.collectAsState()
-    val lastGattAsciiText by wheeltopManager.lastGattAsciiText.collectAsState()
-    val lastGattTimestamp by wheeltopManager.lastGattTimestamp.collectAsState()
-    val blockStatusText by wheeltopManager.blockStatusText.collectAsState()
 
     val boundRemoteMac by remoteManager.boundRemoteMac.collectAsState()
     val boundRemoteName by remoteManager.boundRemoteName.collectAsState()
@@ -117,7 +109,6 @@ fun EdsChargeLightScreen(wheeltopManager: WheeltopManager, remoteManager: Magics
     val scannedRemotes by remoteManager.scannedRemotes.collectAsState()
     val lastClickText by remoteManager.lastClickText.collectAsState()
     val doubleClickMode by remoteManager.doubleClickMode.collectAsState()
-    val isActiveUseAsBlip by remoteManager.isActiveUseAsBlip.collectAsState()
 
     val scrollState = rememberScrollState()
 
@@ -143,7 +134,7 @@ fun EdsChargeLightScreen(wheeltopManager: WheeltopManager, remoteManager: Magics
             verticalAlignment = Alignment.CenterVertically
         ) {
             Text(
-                text = "v0.0.3 • Ham 🐵🚀 Release",
+                text = "v0.0.4 • Ham 🐵🚀 Release",
                 fontSize = 12.sp,
                 color = Color(0xFF5E546E)
             )
@@ -210,19 +201,12 @@ fun EdsChargeLightScreen(wheeltopManager: WheeltopManager, remoteManager: Magics
                     deviceName = item.name,
                     deviceMac = item.address,
                     isBound = isBound,
-                    isPullingBlocks = isPullingGattBlocks,
-                    blockStatusText = if (isBound) blockStatusText else null,
-                    lastAsciiText = if (isBound) lastGattAsciiText else null,
-                    lastTimestamp = if (isBound) lastGattTimestamp else 0L,
                     onBindChange = { enabled ->
                         if (enabled) {
                             wheeltopManager.bindDevice(item.address, item.name)
                         } else {
                             wheeltopManager.unbindDevice()
                         }
-                    },
-                    onPullBlocks = {
-                        wheeltopManager.pullGattBlocks()
                     }
                 )
                 Spacer(modifier = Modifier.height(10.dp))
@@ -283,14 +267,10 @@ fun EdsChargeLightScreen(wheeltopManager: WheeltopManager, remoteManager: Magics
                     deviceName = remoteItem.name,
                     deviceMac = remoteItem.address,
                     isBound = isThisRemoteBound,
-                    isActiveUseAsBlip = isActiveUseAsBlip,
                     lastClickText = if (isThisRemoteBound) lastClickText else null,
                     doubleClickMode = doubleClickMode,
                     onDoubleClickModeChange = { mode ->
                         remoteManager.setDoubleClickMode(mode)
-                    },
-                    onActiveUseAsBlipChange = { active ->
-                        remoteManager.setActiveUseAsBlip(active)
                     },
                     onBindChange = { enabled ->
                         if (enabled) {
@@ -311,12 +291,7 @@ private fun DerailleurCard(
     deviceName: String,
     deviceMac: String,
     isBound: Boolean,
-    isPullingBlocks: Boolean,
-    blockStatusText: String?,
-    lastAsciiText: String?,
-    lastTimestamp: Long,
-    onBindChange: (Boolean) -> Unit,
-    onPullBlocks: () -> Unit
+    onBindChange: (Boolean) -> Unit
 ) {
     val containerColor = if (isBound) Color(0x3F45DDA0) else Color(0x3FE53935)
     val borderColor = if (isBound) Color(0x8045DDA0) else Color(0x80D32F2F)
@@ -340,61 +315,7 @@ private fun DerailleurCard(
                 color = Color(0xFF5E546E)
             )
 
-            Spacer(modifier = Modifier.height(10.dp))
-
-            if (isBound) {
-                Button(
-                    onClick = onPullBlocks,
-                    modifier = Modifier.fillMaxWidth(),
-                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF007A5E)),
-                    shape = RoundedCornerShape(8.dp)
-                ) {
-                    Text(
-                        text = if (isPullingBlocks) "Pulling GATT Blocks..." else "Pull GATT Blocks",
-                        fontSize = 13.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = Color.White
-                    )
-                }
-
-                Spacer(modifier = Modifier.height(8.dp))
-
-                val liveStatus = if (!blockStatusText.isNullOrBlank()) blockStatusText else "Ready for Pull"
-                Text(
-                    text = "Status: $liveStatus",
-                    fontSize = 11.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = Color(0xFF006644)
-                )
-
-                if (lastTimestamp > 0L) {
-                    val dateStr = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US).format(Date(lastTimestamp))
-                    Text(
-                        text = "Last Pull: $dateStr",
-                        fontSize = 10.sp,
-                        fontWeight = FontWeight.Normal,
-                        color = Color(0xFF5E546E)
-                    )
-                }
-
-                Spacer(modifier = Modifier.height(4.dp))
-
-                Surface(
-                    modifier = Modifier.fillMaxWidth(),
-                    color = Color(0x1A000000),
-                    shape = RoundedCornerShape(8.dp)
-                ) {
-                    Text(
-                        text = if (!lastAsciiText.isNullOrBlank()) lastAsciiText else "No GATT data pulled yet. Click 'Pull GATT Blocks'.",
-                        fontSize = 10.sp,
-                        fontFamily = FontFamily.Monospace,
-                        color = Color(0xFF1E1B2E),
-                        modifier = Modifier.padding(8.dp)
-                    )
-                }
-
-                Spacer(modifier = Modifier.height(10.dp))
-            }
+            Spacer(modifier = Modifier.height(12.dp))
 
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -428,11 +349,9 @@ private fun RemoteCard(
     deviceName: String,
     deviceMac: String,
     isBound: Boolean,
-    isActiveUseAsBlip: Boolean,
     lastClickText: String?,
     doubleClickMode: String,
     onDoubleClickModeChange: (String) -> Unit,
-    onActiveUseAsBlipChange: (Boolean) -> Unit,
     onBindChange: (Boolean) -> Unit
 ) {
     val containerColor = if (isBound) Color(0x3F45DDA0) else Color(0x3FE53935)
@@ -521,42 +440,7 @@ private fun RemoteCard(
                 onSelect = { onDoubleClickModeChange("BURST_SHIFT") }
             )
 
-            Spacer(modifier = Modifier.height(10.dp))
-
-            if (isBound) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            text = "Active Use as Blip",
-                            fontSize = 13.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = Color(0xFF1E1B2E)
-                        )
-                        Text(
-                            text = "Keeps persistent connection with 3s Keep-Alive for instant shifting",
-                            fontSize = 10.sp,
-                            color = Color(0xFF5E546E)
-                        )
-                    }
-
-                    Switch(
-                        checked = isActiveUseAsBlip,
-                        onCheckedChange = onActiveUseAsBlipChange,
-                        colors = SwitchDefaults.colors(
-                            checkedThumbColor = Color.White,
-                            checkedTrackColor = Color(0xFF007A5E),
-                            uncheckedThumbColor = Color.White,
-                            uncheckedTrackColor = Color(0xFF777777)
-                        )
-                    )
-                }
-
-                Spacer(modifier = Modifier.height(12.dp))
-            }
+            Spacer(modifier = Modifier.height(12.dp))
 
             Row(
                 modifier = Modifier.fillMaxWidth(),

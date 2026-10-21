@@ -63,9 +63,6 @@ class MagicshineRemoteManager private constructor(private val appContext: Contex
     private val _doubleClickMode = MutableStateFlow("FD_TOGGLE")
     val doubleClickMode: StateFlow<String> = _doubleClickMode.asStateFlow()
 
-    private val _isActiveUseAsBlip = MutableStateFlow(false)
-    val isActiveUseAsBlip: StateFlow<Boolean> = _isActiveUseAsBlip.asStateFlow()
-
     private var remoteScanCallback: ScanCallback? = null
     private var lastSequenceToken = -1
     private var lastButtonCode = -1
@@ -95,25 +92,12 @@ class MagicshineRemoteManager private constructor(private val appContext: Contex
                 _doubleClickMode.value = mode
             }
         }
-
-        scope.launch {
-            remotePreferences.activeUseAsBlip.collect { active ->
-                _isActiveUseAsBlip.value = active
-            }
-        }
     }
 
     fun setDoubleClickMode(mode: String) {
         _doubleClickMode.value = mode
         scope.launch {
             remotePreferences.saveDoubleClickMode(mode)
-        }
-    }
-
-    fun setActiveUseAsBlip(enabled: Boolean) {
-        _isActiveUseAsBlip.value = enabled
-        scope.launch {
-            remotePreferences.saveActiveUseAsBlip(enabled)
         }
     }
 
