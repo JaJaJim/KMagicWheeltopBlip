@@ -768,9 +768,9 @@ class WheeltopManager private constructor(context: Context) {
     }
 
     fun shiftRear(direction: Int) {
-        val mac = _boundMacAddress.value ?: return
-        if (activeGatt == null || _connectionState.value != ConnectionState.CONNECTED) {
-            connectToBoundDevice(mac)
+        if (activeGatt == null || _connectionState.value != ConnectionState.CONNECTED || !_isAuthenticatedState.value || _isPullingGattBlocks.value) {
+            Log.w(TAG, "[SAFETY DISCARD] GATT not connected or handshake in progress. Discarding shiftRear($direction) for rider safety.")
+            return
         }
         scope.launch(Dispatchers.IO) {
             val payload = byteArrayOf(direction.toByte())
@@ -779,9 +779,9 @@ class WheeltopManager private constructor(context: Context) {
     }
 
     fun toggleFrontDerailleur() {
-        val mac = _boundMacAddress.value ?: return
-        if (activeGatt == null || _connectionState.value != ConnectionState.CONNECTED) {
-            connectToBoundDevice(mac)
+        if (activeGatt == null || _connectionState.value != ConnectionState.CONNECTED || !_isAuthenticatedState.value || _isPullingGattBlocks.value) {
+            Log.w(TAG, "[SAFETY DISCARD] GATT not connected or handshake in progress. Discarding toggleFrontDerailleur for rider safety.")
+            return
         }
         scope.launch(Dispatchers.IO) {
             val payload = byteArrayOf(0x02.toByte())
