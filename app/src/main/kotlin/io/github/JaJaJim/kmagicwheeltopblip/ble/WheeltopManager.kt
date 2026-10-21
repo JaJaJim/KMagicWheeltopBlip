@@ -312,28 +312,21 @@ class WheeltopManager private constructor(context: Context) {
     fun pullGattBlocks() {
         val mac = _boundMacAddress.value ?: return
         if (_isPullingGattBlocks.value && pullRetryCount > 0) {
-            Log.i(TAG, "pullGattBlocks() already in progress (Attempt $pullRetryCount/5). Skipping duplicate trigger.")
+            Log.i(TAG, "pullGattBlocks() already in progress. Skipping duplicate trigger.")
             return
         }
 
         stopScanForWheeltopDevices()
         _isPullingGattBlocks.value = true
+        _lastGattAsciiText.value = null // Start fresh (no cached voltages shown on startup)
         pullRetryCount = 0
         executePullAttempt(mac)
     }
 
     private fun executePullAttempt(mac: String) {
         pullRetryCount++
-        if (pullRetryCount > 5) {
-            Log.e(TAG, "===> [PULL GATT BLOCKS FAILED] Exceeded 5 attempts. Marking as Connection Failed.")
-            _isPullingGattBlocks.value = false
-            _blockStatusText.value = "Connection Failed"
-            disconnectGatt()
-            return
-        }
-
-        Log.i(TAG, "===> [PULL GATT BLOCKS ATTEMPT $pullRetryCount/5] MAC: $mac")
-        _blockStatusText.value = "Syncing ($pullRetryCount/5)..."
+        Log.i(TAG, "===> [STREAMLINED GATT PULL ATTEMPT $pullRetryCount] MAC: $mac")
+        _blockStatusText.value = "Connecting..."
         asciiBuffer.clear()
         pingPongStep = 0
 
@@ -341,20 +334,15 @@ class WheeltopManager private constructor(context: Context) {
         connectTimeoutJob = scope.launch(Dispatchers.IO) {
             delay(8_000) // 8-second hard safety timeout
             if (_isPullingGattBlocks.value && pingPongStep < 6) {
-                Log.w(TAG, "[PULL ATTEMPT $pullRetryCount/5 TIMED OUT] Performing 3.5s modem cooldown & retrying...")
+                Log.w(TAG, "[PULL ATTEMPT $pullRetryCount TIMED OUT] Performing 2s modem cooldown & retrying endlessly...")
                 val currentMac = mac
                 disconnectGatt()
 
                 scope.launch(Dispatchers.IO) {
-                    delay(3500) // 3.5s Qualcomm modem quiet cooldown
-                    if (_isPullingGattBlocks.value) {
-                        if (pullRetryCount < 5) {
-                            executePullAttempt(currentMac)
-                        } else {
-                            Log.e(TAG, "===> [PULL GATT BLOCKS FAILED] All 5 attempts exhausted.")
-                            _isPullingGattBlocks.value = false
-                            _blockStatusText.value = "Connection Failed"
-                        }
+                    delay(2000) // 2s Qualcomm modem quiet cooldown
+                    if (_isPullingGattBlocks.value || _isRideActive.value) {
+                        _isPullingGattBlocks.value = true
+                        executePullAttempt(currentMac)
                     }
                 }
             }
@@ -395,10 +383,11 @@ class WheeltopManager private constructor(context: Context) {
         scope.launch(Dispatchers.Main) {
             try {
                 remoteManager.pauseScan()
-                Log.i(TAG, "[RULE 1] Instant Direct GATT Connect (autoConnect=false) to MAC: $macAddress ...")
+                val useAutoConnect = (pullRetryCount > 1)
+                Log.i(TAG, "[STREAMLINED CONNECT] GATT Connect (autoConnect=$useAutoConnect) to MAC: $macAddress ...")
                 val device = bluetoothAdapter?.getRemoteDevice(macAddress) ?: return@launch
 
-                activeGatt = device.connectGatt(appContext, false, gattCallback, BluetoothDevice.TRANSPORT_LE)
+                activeGatt = device.connectGatt(appContext, useAutoConnect, gattCallback, BluetoothDevice.TRANSPORT_LE)
             } catch (e: Exception) {
                 Log.e(TAG, "GATT connection error to $macAddress: ${e.message}")
                 _connectionState.value = ConnectionState.DISCONNECTED
@@ -524,14 +513,14 @@ class WheeltopManager private constructor(context: Context) {
     private fun startInitializationSequence() {
         initJob?.cancel()
         pingPongStep = 1
-        _blockStatusText.value = "Authenticating..."
+        _blockStatusText.value = "Reading Blocks..."
         initJob = scope.launch(Dispatchers.IO) {
             Log.i(TAG, "[FIREWORK FLOW] Step 1: Sending 1-byte 0xFA Pipe Opener (0x80)...")
             sendAppProtocolCommand("0xFA (Pipe Opener)", 0xFA, byteArrayOf(0x80.toByte()))
             delay(350)
 
             pingPongStep = 2
-            _blockStatusText.value = "Reading Block 0 (0/5)..."
+            _blockStatusText.value = "Reading Blocks..."
             Log.i(TAG, "[FIREWORK FLOW] Step 2: Sending read block 0 (0xFB, 00 00 51)...")
             sendAppProtocolCommand("read block 0 (0xFB)", 0xFB, byteArrayOf(0x00, 0x00, 0x51.toByte()))
         }
