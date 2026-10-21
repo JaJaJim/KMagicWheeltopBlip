@@ -248,9 +248,6 @@ class WheeltopManager private constructor(context: Context) {
                 delay(3000)
                 if (
                     _connectionState.value == ConnectionState.CONNECTED &&
-                    remoteManager.isActiveUseAsBlip.value &&
-                    _isRideActive.value &&
-                    _isAuthenticatedState.value &&
                     !_isPullingGattBlocks.value &&
                     !isShiftInProgress
                 ) {
@@ -535,6 +532,7 @@ class WheeltopManager private constructor(context: Context) {
             Log.i(TAG, "CCCD Descriptor Write Status: $status (OK=$isOk). Triggering Auth Handshake in 400ms...")
             if (isOk) {
                 _connectionState.value = ConnectionState.CONNECTED
+                _isAuthenticatedState.value = true
                 scope.launch(Dispatchers.IO) {
                     delay(400)
                     sendRawFrame("Auth Handshake", AUTH_PASS_FRAME)
