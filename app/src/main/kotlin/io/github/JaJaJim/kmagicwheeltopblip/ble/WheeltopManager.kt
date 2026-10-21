@@ -118,6 +118,9 @@ class WheeltopManager private constructor(context: Context) {
     private val _isPullingGattBlocks = MutableStateFlow(false)
     val isPullingGattBlocks: StateFlow<Boolean> = _isPullingGattBlocks.asStateFlow()
 
+    private val _areGattBlocksFullyRead = MutableStateFlow(false)
+    val areGattBlocksFullyRead: StateFlow<Boolean> = _areGattBlocksFullyRead.asStateFlow()
+
     private val _lastGattAsciiText = MutableStateFlow<String?>(null)
     val lastGattAsciiText: StateFlow<String?> = _lastGattAsciiText.asStateFlow()
 
@@ -152,6 +155,22 @@ class WheeltopManager private constructor(context: Context) {
             remotePreferences.boundWheeltopName.collectLatest { name ->
                 if (!name.isNullOrBlank()) {
                     _boundDeviceName.value = name
+                }
+            }
+        }
+
+        scope.launch {
+            remotePreferences.lastGattAsciiText.collectLatest { text ->
+                if (!text.isNullOrBlank()) {
+                    _lastGattAsciiText.value = text
+                }
+            }
+        }
+
+        scope.launch {
+            remotePreferences.lastGattTimestamp.collectLatest { timestamp ->
+                if (timestamp > 0L) {
+                    _lastGattTimestamp.value = timestamp
                 }
             }
         }
@@ -192,7 +211,7 @@ class WheeltopManager private constructor(context: Context) {
             if (!boundMac.isNullOrBlank()) {
                 if (_connectionState.value == ConnectionState.DISCONNECTED) {
                     connectToBoundDevice(boundMac)
-                } else if (_connectionState.value == ConnectionState.CONNECTED) {
+                } else if (_connectionState.value == ConnectionState.CONNECTED && _areGattBlocksFullyRead.value && !_isPullingGattBlocks.value) {
                     start3SecondWakeUpPing()
                 }
             }
@@ -208,21 +227,39 @@ class WheeltopManager private constructor(context: Context) {
 
     private fun start3SecondWakeUpPing() {
         wakeUpPingJob?.cancel()
+        wakeUpPingJob = null
+
+        val canPing = _connectionState.value == ConnectionState.CONNECTED &&
+                _isRideActive.value &&
+                _areGattBlocksFullyRead.value &&
+                !_isPullingGattBlocks.value
+
+        if (!canPing) {
+            Log.i(TAG, "start3SecondWakeUpPing BLOCKED: Conditions not met (connected=${_connectionState.value == ConnectionState.CONNECTED}, rideActive=${_isRideActive.value}, blocksRead=${_areGattBlocksFullyRead.value}, pulling=${_isPullingGattBlocks.value})")
+            return
+        }
+
+        Log.i(TAG, "===> [3s KEEP-ALIVE PING STARTED] Periodic 3s 0xFA Pipe Opener active.")
         wakeUpPingJob = scope.launch(Dispatchers.IO) {
             while (
                 _connectionState.value == ConnectionState.CONNECTED &&
-                _isRideActive.value
+                _isRideActive.value &&
+                _areGattBlocksFullyRead.value &&
+                !_isPullingGattBlocks.value
             ) {
                 delay(3000)
                 if (
                     _connectionState.value == ConnectionState.CONNECTED &&
+                    _isRideActive.value &&
+                    _areGattBlocksFullyRead.value &&
                     !_isPullingGattBlocks.value &&
                     !isShiftInProgress
                 ) {
-                    Log.d(TAG, "===> [3s KEEP-ALIVE PING] Sending 1-byte 0xFA Pipe Opener to keep WheelTop MCU awake...")
+                    Log.i(TAG, "===> [3s KEEP-ALIVE PING] Sending 1-byte 0xFA Pipe Opener to keep WheelTop MCU awake...")
                     sendAppProtocolCommand("3s Keep-Alive", 0xFA, byteArrayOf(0x80.toByte()))
                 }
             }
+            Log.i(TAG, "===> [3s KEEP-ALIVE PING STOPPED]")
         }
     }
 
@@ -316,19 +353,27 @@ class WheeltopManager private constructor(context: Context) {
             return
         }
 
+        wakeUpPingJob?.cancel()
+        wakeUpPingJob = null
         stopScanForWheeltopDevices()
         _isPullingGattBlocks.value = true
+        _areGattBlocksFullyRead.value = false
         _lastGattAsciiText.value = null // Start fresh (no cached voltages shown on startup)
         pullRetryCount = 0
+        remoteManager.pauseScan()
         executePullAttempt(mac)
     }
 
     private fun executePullAttempt(mac: String) {
         pullRetryCount++
         Log.i(TAG, "===> [STREAMLINED GATT PULL ATTEMPT $pullRetryCount] MAC: $mac")
+        wakeUpPingJob?.cancel()
+        wakeUpPingJob = null
         _blockStatusText.value = "Connecting..."
+        _areGattBlocksFullyRead.value = false
         asciiBuffer.clear()
         pingPongStep = 0
+        remoteManager.pauseScan()
 
         connectTimeoutJob?.cancel()
         connectTimeoutJob = scope.launch(Dispatchers.IO) {
@@ -360,8 +405,12 @@ class WheeltopManager private constructor(context: Context) {
     @SuppressLint("MissingPermission")
     fun connectToBoundDevice(macAddress: String) {
         _boundMacAddress.value = macAddress
+        wakeUpPingJob?.cancel()
+        wakeUpPingJob = null
+        _areGattBlocksFullyRead.value = false
         asciiBuffer.clear()
         pingPongStep = 0
+        remoteManager.pauseScan()
 
         if (activeGatt != null || _connectionState.value == ConnectionState.CONNECTING || _connectionState.value == ConnectionState.CONNECTED) {
             Log.i(TAG, "[RULE 1 GUARD] GATT Connection active or connecting. Re-triggering initialization if needed...")
@@ -383,11 +432,10 @@ class WheeltopManager private constructor(context: Context) {
         scope.launch(Dispatchers.Main) {
             try {
                 remoteManager.pauseScan()
-                val useAutoConnect = (pullRetryCount > 1)
-                Log.i(TAG, "[STREAMLINED CONNECT] GATT Connect (autoConnect=$useAutoConnect) to MAC: $macAddress ...")
+                Log.i(TAG, "[DIRECT CONNECT] GATT Direct Connect (autoConnect=false) to MAC: $macAddress ...")
                 val device = bluetoothAdapter?.getRemoteDevice(macAddress) ?: return@launch
 
-                activeGatt = device.connectGatt(appContext, useAutoConnect, gattCallback, BluetoothDevice.TRANSPORT_LE)
+                activeGatt = device.connectGatt(appContext, false, gattCallback, BluetoothDevice.TRANSPORT_LE)
             } catch (e: Exception) {
                 Log.e(TAG, "GATT connection error to $macAddress: ${e.message}")
                 _connectionState.value = ConnectionState.DISCONNECTED
@@ -399,6 +447,8 @@ class WheeltopManager private constructor(context: Context) {
     @SuppressLint("MissingPermission")
     fun disconnectGatt() {
         Log.i(TAG, "[RULE 4] disconnectGatt() invoked. Force cancelling jobs, closing GATT socket, and resetting state...")
+        _areGattBlocksFullyRead.value = false
+        remoteManager.pauseScan()
         blockWatchdogJob?.cancel()
         blockWatchdogJob = null
         connectTimeoutJob?.cancel()
@@ -513,7 +563,9 @@ class WheeltopManager private constructor(context: Context) {
     private fun startInitializationSequence() {
         initJob?.cancel()
         pingPongStep = 1
+        _areGattBlocksFullyRead.value = false
         _blockStatusText.value = "Reading Blocks..."
+        remoteManager.pauseScan()
         initJob = scope.launch(Dispatchers.IO) {
             Log.i(TAG, "[FIREWORK FLOW] Step 1: Sending 1-byte 0xFA Pipe Opener (0x80)...")
             sendAppProtocolCommand("0xFA (Pipe Opener)", 0xFA, byteArrayOf(0x80.toByte()))
@@ -595,13 +647,19 @@ class WheeltopManager private constructor(context: Context) {
             } else if (pingPongStep == 6) {
                 connectTimeoutJob?.cancel()
                 connectTimeoutJob = null
-                _blockStatusText.value = "Ready"
                 Log.i(TAG, "===> [BLOCK 4 RECEIVED (132 BYTES)!] ALL BLOCKS 0..4 FULLY UNLOCKED!")
 
                 val fullAscii = asciiBuffer.toString()
                 val currentTimestamp = System.currentTimeMillis()
+
+                scope.launch {
+                    remotePreferences.saveGattBlockDataset(fullAscii, currentTimestamp)
+                }
+
                 _lastGattAsciiText.value = fullAscii
                 _lastGattTimestamp.value = currentTimestamp
+                _areGattBlocksFullyRead.value = true
+                _blockStatusText.value = "Ready"
                 _isPullingGattBlocks.value = false
 
                 if (!_isRideActive.value) {
@@ -610,9 +668,9 @@ class WheeltopManager private constructor(context: Context) {
                 } else {
                     Log.i(TAG, "Ride Active is TRUE. Keeping GATT open & starting 3s Keep-Alive Ping...")
                     start3SecondWakeUpPing()
+                    Log.i(TAG, "===> [BLIP SCANNER ACTIVATED] Blocks 0-4 successfully read out and connected! Resuming blip scan.")
+                    remoteManager.resumeScan()
                 }
-
-                remoteManager.resumeScan()
             }
         }
     }

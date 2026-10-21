@@ -73,10 +73,10 @@ class MagicshineRemoteManager private constructor(private val appContext: Contex
         scope.launch {
             remotePreferences.boundRemoteMac.collect { mac ->
                 _boundRemoteMac.value = mac
-                if (!mac.isNullOrBlank()) {
-                    startLowLatencyScan()
-                } else {
+                if (mac.isNullOrBlank()) {
                     stopScan()
+                } else {
+                    resumeScan()
                 }
             }
         }
@@ -166,7 +166,7 @@ class MagicshineRemoteManager private constructor(private val appContext: Contex
         Log.i(TAG, "Binding Magicshine M0-C0 Remote MAC: $address Name: $name")
         scope.launch {
             remotePreferences.saveBoundRemote(address, name)
-            startLowLatencyScan()
+            resumeScan()
         }
     }
 
@@ -187,13 +187,30 @@ class MagicshineRemoteManager private constructor(private val appContext: Contex
     }
 
     fun pauseScan() {
+        Log.i(TAG, "pauseScan() invoked: Deactivating blip scanner.")
         stopScan()
     }
 
     fun resumeScan() {
-        if (!_boundRemoteMac.value.isNullOrBlank()) {
-            startLowLatencyScan()
+        val boundMac = _boundRemoteMac.value
+        if (boundMac.isNullOrBlank()) {
+            Log.i(TAG, "resumeScan(): No bound remote MAC. Blip scanner remains DEACTIVATED.")
+            stopScan()
+            return
         }
+
+        val isConnected = wheeltopManager.connectionState.value == ConnectionState.CONNECTED
+        val isPulling = wheeltopManager.isPullingGattBlocks.value
+        val isBlocksRead = wheeltopManager.areGattBlocksFullyRead.value
+
+        if (!isConnected || isPulling || !isBlocksRead) {
+            Log.i(TAG, "resumeScan(): Blip scanner DEACTIVATED until Wheeltop is connected AND blocks 0-4 are read out. (connected=$isConnected, isPulling=$isPulling, blocksRead=$isBlocksRead)")
+            stopScan()
+            return
+        }
+
+        Log.i(TAG, "resumeScan(): Conditions met (Connected + Blocks 0-4 Read). ACTIVATING blip scanner!")
+        startLowLatencyScan()
     }
 
     @SuppressLint("MissingPermission")
@@ -201,6 +218,17 @@ class MagicshineRemoteManager private constructor(private val appContext: Contex
         val boundMac = _boundRemoteMac.value
         if (boundMac.isNullOrBlank()) return
         if (bluetoothAdapter == null || !bluetoothAdapter!!.isEnabled) return
+
+        val isConnected = wheeltopManager.connectionState.value == ConnectionState.CONNECTED
+        val isPulling = wheeltopManager.isPullingGattBlocks.value
+        val isBlocksRead = wheeltopManager.areGattBlocksFullyRead.value
+
+        if (!isConnected || isPulling || !isBlocksRead) {
+            Log.w(TAG, "startLowLatencyScan BLOCKED: Wheeltop is not connected or blocks 0-4 have not been read out yet! (connected=$isConnected, isPulling=$isPulling, blocksRead=$isBlocksRead)")
+            stopScan()
+            return
+        }
+
         val scanner = bluetoothAdapter?.bluetoothLeScanner ?: return
 
         try {
@@ -231,6 +259,7 @@ class MagicshineRemoteManager private constructor(private val appContext: Contex
         } catch (_: Exception) {}
         isScanningInternal = false
         _connectionState.value = ConnectionState.DISCONNECTED
+        Log.i(TAG, "Magicshine BLE Low Latency ScanRecord engine DEACTIVATED.")
     }
 
     private val scanCallback = object : ScanCallback() {

@@ -7,6 +7,7 @@ import android.view.View
 import android.widget.RemoteViews
 import io.github.JaJaJim.kmagicwheeltopblip.BuildConfig
 import io.github.JaJaJim.kmagicwheeltopblip.R
+import io.github.JaJaJim.kmagicwheeltopblip.ble.ConnectionState
 import io.github.JaJaJim.kmagicwheeltopblip.ble.WheeltopManager
 import io.hammerhead.karooext.extension.DataTypeImpl
 import io.hammerhead.karooext.extension.KarooExtension
@@ -50,6 +51,13 @@ class KarooEdsChargeExtensionService : KarooExtension("kmagic-wheeltop-blip", Bu
     ) : DataTypeImpl(extension, typeId) {
 
         override fun startStream(emitter: Emitter<StreamState>) {
+            wheeltopManager.setIsRideActive(true)
+            if (wheeltopManager.connectionState.value == ConnectionState.DISCONNECTED) {
+                val boundMac = wheeltopManager.boundMacAddress.value
+                if (!boundMac.isNullOrBlank()) {
+                    wheeltopManager.pullGattBlocks()
+                }
+            }
             val job = serviceScope.launch {
                 // Ticker job for 5-minute auto-refresh
                 launch {
@@ -90,6 +98,13 @@ class KarooEdsChargeExtensionService : KarooExtension("kmagic-wheeltop-blip", Bu
         }
 
         override fun startView(context: Context, config: ViewConfig, emitter: ViewEmitter) {
+            wheeltopManager.setIsRideActive(true)
+            if (wheeltopManager.connectionState.value == ConnectionState.DISCONNECTED) {
+                val boundMac = wheeltopManager.boundMacAddress.value
+                if (!boundMac.isNullOrBlank()) {
+                    wheeltopManager.pullGattBlocks()
+                }
+            }
             emitter.onNext(UpdateGraphicConfig(showHeader = true))
 
             val job = serviceScope.launch(Dispatchers.Main) {

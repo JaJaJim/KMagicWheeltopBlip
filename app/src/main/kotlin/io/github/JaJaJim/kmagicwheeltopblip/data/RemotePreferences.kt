@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import kotlinx.coroutines.flow.Flow
@@ -20,6 +21,8 @@ class RemotePreferences(private val context: Context) {
         private val BOUND_REMOTE_NAME_KEY = stringPreferencesKey("bound_remote_name")
         private val DOUBLE_CLICK_MODE_KEY = stringPreferencesKey("double_click_mode")
         private val LAST_BUILD_SIGNATURE_KEY = stringPreferencesKey("last_build_signature")
+        private val LAST_GATT_ASCII_KEY = stringPreferencesKey("last_gatt_ascii")
+        private val LAST_GATT_TIMESTAMP_KEY = longPreferencesKey("last_gatt_timestamp")
     }
 
     val boundWheeltopMac: Flow<String?> = context.dataStore.data.map { preferences ->
@@ -40,6 +43,21 @@ class RemotePreferences(private val context: Context) {
 
     val doubleClickMode: Flow<String> = context.dataStore.data.map { preferences ->
         preferences[DOUBLE_CLICK_MODE_KEY] ?: "FD_TOGGLE"
+    }
+
+    val lastGattAsciiText: Flow<String?> = context.dataStore.data.map { preferences ->
+        preferences[LAST_GATT_ASCII_KEY]
+    }
+
+    val lastGattTimestamp: Flow<Long> = context.dataStore.data.map { preferences ->
+        preferences[LAST_GATT_TIMESTAMP_KEY] ?: 0L
+    }
+
+    suspend fun saveGattBlockDataset(ascii: String, timestamp: Long) {
+        context.dataStore.edit { preferences ->
+            preferences[LAST_GATT_ASCII_KEY] = ascii
+            preferences[LAST_GATT_TIMESTAMP_KEY] = timestamp
+        }
     }
 
     suspend fun checkAndClearOnNewBuild(buildSignature: String) {
