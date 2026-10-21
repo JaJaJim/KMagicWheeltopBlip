@@ -33,6 +33,12 @@ enum class ConnectionState {
     CONNECTED
 }
 
+enum class GattOwner {
+    NONE,
+    RIDE_DATAFIELD,
+    APP_CONFIG
+}
+
 class WheeltopManager private constructor(context: Context) {
 
     private val appContext = context.applicationContext
@@ -90,6 +96,12 @@ class WheeltopManager private constructor(context: Context) {
 
     private val _connectionState = MutableStateFlow(ConnectionState.DISCONNECTED)
     val connectionState: StateFlow<ConnectionState> = _connectionState.asStateFlow()
+
+    private val _activeGattOwner = MutableStateFlow(GattOwner.NONE)
+    val activeGattOwner: StateFlow<GattOwner> = _activeGattOwner.asStateFlow()
+
+    private val _isRideActive = MutableStateFlow(false)
+    val isRideActive: StateFlow<Boolean> = _isRideActive.asStateFlow()
 
     private val _isScanningDerailleurs = MutableStateFlow(false)
     val isScanningDerailleurs: StateFlow<Boolean> = _isScanningDerailleurs.asStateFlow()
@@ -156,18 +168,18 @@ class WheeltopManager private constructor(context: Context) {
             }
         }
 
-        // Keep-Alive Ping Ticker when Active use as Blip is enabled
+        // Keep-Alive Ping Ticker when Active use as Blip AND Ride Active are enabled
         scope.launch {
             remotePreferences.activeUseAsBlip.collectLatest { active ->
                 wakeUpPingJob?.cancel()
-                if (active) {
+                if (active && _isRideActive.value) {
                     val boundMac = _boundMacAddress.value
                     if (!boundMac.isNullOrBlank() && _connectionState.value == ConnectionState.DISCONNECTED) {
                         connectToBoundDevice(boundMac)
                     } else if (_connectionState.value == ConnectionState.CONNECTED) {
                         start3SecondWakeUpPing()
                     }
-                } else {
+                } else if (!active) {
                     if (!_isPullingGattBlocks.value && _connectionState.value == ConnectionState.CONNECTED) {
                         disconnectGatt()
                     }
@@ -176,12 +188,72 @@ class WheeltopManager private constructor(context: Context) {
         }
     }
 
+    fun requestRideDatafieldGattAccess() {
+        if (_activeGattOwner.value == GattOwner.APP_CONFIG) {
+            Log.w(TAG, "===> [PRIORITY PREEMPTION] Ride Datafield requesting VIP GATT access. Releasing App Config GATT lock...")
+            disconnectGatt()
+        }
+        _activeGattOwner.value = GattOwner.RIDE_DATAFIELD
+    }
+
+    fun requestAppConfigGattAccess() {
+        if (_activeGattOwner.value == GattOwner.RIDE_DATAFIELD) {
+            Log.i(TAG, "===> [PRIORITY YIELD] Ride Datafield active on screen. App Config deferring to Ride Datafield...")
+            return
+        }
+        _activeGattOwner.value = GattOwner.APP_CONFIG
+    }
+
+    fun releaseAppConfigGattLock() {
+        Log.i(TAG, "===> [AUTO-YIELD] App Config releasing GATT lock on pause/stop...")
+        _activeGattOwner.value = GattOwner.NONE
+        if (!_isRideActive.value && !_isPullingGattBlocks.value) {
+            wakeUpPingJob?.cancel()
+            wakeUpPingJob = null
+            Log.i(TAG, "===> [HARD CANCEL] Cancelling 3s Keep-Alive Ping & disconnecting GATT on Config UI exit...")
+            disconnectGatt()
+        }
+    }
+
+    fun setIsRideActive(active: Boolean) {
+        _isRideActive.value = active
+        Log.i(TAG, "===> [RIDE LIFECYCLE] setIsRideActive: $active")
+        if (active) {
+            val boundMac = _boundMacAddress.value
+            if (!boundMac.isNullOrBlank() && remoteManager.isActiveUseAsBlip.value) {
+                if (_connectionState.value == ConnectionState.DISCONNECTED) {
+                    connectToBoundDevice(boundMac)
+                } else if (_connectionState.value == ConnectionState.CONNECTED) {
+                    start3SecondWakeUpPing()
+                }
+            }
+        } else {
+            wakeUpPingJob?.cancel()
+            wakeUpPingJob = null
+            if (!_isPullingGattBlocks.value) {
+                Log.i(TAG, "===> [RIDE ENDED] Ride active session finished. Hard cancelling 3s Keep-Alive Ping & releasing GATT socket...")
+                disconnectGatt()
+            }
+        }
+    }
+
     private fun start3SecondWakeUpPing() {
         wakeUpPingJob?.cancel()
         wakeUpPingJob = scope.launch(Dispatchers.IO) {
-            while (_connectionState.value == ConnectionState.CONNECTED && remoteManager.isActiveUseAsBlip.value) {
+            while (
+                _connectionState.value == ConnectionState.CONNECTED &&
+                remoteManager.isActiveUseAsBlip.value &&
+                _isRideActive.value
+            ) {
                 delay(3000)
-                if (_connectionState.value == ConnectionState.CONNECTED && !isShiftInProgress) {
+                if (
+                    _connectionState.value == ConnectionState.CONNECTED &&
+                    remoteManager.isActiveUseAsBlip.value &&
+                    _isRideActive.value &&
+                    _isAuthenticatedState.value &&
+                    !_isPullingGattBlocks.value &&
+                    !isShiftInProgress
+                ) {
                     Log.d(TAG, "===> [3s KEEP-ALIVE PING] Sending 1-byte 0xFA Pipe Opener to keep WheelTop MCU awake...")
                     sendAppProtocolCommand("3s Keep-Alive", 0xFA, byteArrayOf(0x80.toByte()))
                 }
@@ -304,12 +376,12 @@ class WheeltopManager private constructor(context: Context) {
         connectTimeoutJob = scope.launch(Dispatchers.IO) {
             delay(8_000) // 8-second hard safety timeout
             if (_isPullingGattBlocks.value && pingPongStep < 6) {
-                Log.w(TAG, "[PULL ATTEMPT $pullRetryCount/5 TIMED OUT] Performing 2s modem cooldown & retrying...")
+                Log.w(TAG, "[PULL ATTEMPT $pullRetryCount/5 TIMED OUT] Performing 3.5s modem cooldown & retrying...")
                 val currentMac = mac
                 disconnectGatt()
 
                 scope.launch(Dispatchers.IO) {
-                    delay(2000) // 2s Qualcomm modem quiet cooldown
+                    delay(3500) // 3.5s Qualcomm modem quiet cooldown
                     if (_isPullingGattBlocks.value) {
                         if (pullRetryCount < 5) {
                             executePullAttempt(currentMac)
@@ -581,11 +653,11 @@ class WheeltopManager private constructor(context: Context) {
                     remotePreferences.saveGattBlockDataset(fullAscii, currentTimestamp)
                 }
 
-                if (!remoteManager.isActiveUseAsBlip.value) {
-                    Log.i(TAG, "Active use as Blip is INACTIVE. Disconnecting GATT socket after successful block pull...")
+                if (!remoteManager.isActiveUseAsBlip.value || !_isRideActive.value) {
+                    Log.i(TAG, "Active use as Blip or Ride Active is INACTIVE. Disconnecting GATT socket after successful block pull...")
                     disconnectGatt()
                 } else {
-                    Log.i(TAG, "Active use as Blip is ACTIVE. Keeping GATT open & starting 3s Keep-Alive Ping...")
+                    Log.i(TAG, "Active use as Blip AND Ride Active are TRUE. Keeping GATT open & starting 3s Keep-Alive Ping...")
                     start3SecondWakeUpPing()
                 }
 
