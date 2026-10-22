@@ -12,8 +12,8 @@ android {
         applicationId = "io.github.JaJaJim.kmagicwheeltopblip"
         minSdk = 26
         targetSdk = 34
-        versionCode = 5
-        versionName = "0.0.5"
+        versionCode = 10
+        versionName = "0.1.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }

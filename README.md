@@ -4,6 +4,13 @@ A Hammerhead Karoo extension for **Wheeltop EDS (TX, OX, GX, GeX)** electronic s
 
 This project is a new, native Android/Karoo (partial) re-implementation based on [drJeckyll's EDS-OX project](https://git.jeckyll.net/published/personal/eds-ox), specifically designed as a native Hammerhead Karoo extension to bring Wheeltop electronic derailleur telemetry and wireless gear shifting via the Magicshine BLE remote control directly to your (TT-)handlebar.
 
+### 📊 Standalone Karoo Data Field (No Remote Required!)
+Even if you do **not** use a wireless Blip remote, this extension provides a native, live **Karoo Data Field** that dynamically synchronizes its title and layout to your specific bound Wheeltop groupset model (e.g. `EDS TX`, `EDS OX`, `EDS GX`, `EDS GeX`). It displays real-time battery voltages for all active components (Left Shifter `SL`, Right Shifter `SR`, Front Derailleur `FD`, Rear Derailleur `RD`, or Remote `RM`). It automatically updates during rides, making it an indispensable telemetry companion for any Wheeltop EDS groupset rider on Hammerhead Karoo!
+
+<p align="center">
+  <img src="assets/karoo_datafield_screenshot.png" alt="Hammerhead Karoo Data Field Preview" width="380"/>
+</p>
+
 ---
 
 > [!CAUTION]
@@ -117,6 +124,14 @@ adb -s 00450GA262620081 logcat -v time WheeltopManager:V MagicshineRemoteManager
 ---
 
 ## 📝 Changelog
+
+### v0.1.0 - Félicette 🐱🚀 (First Cat in Space Release)
+- **Native Karoo Data Field & Live Voltage Telemetry**: Live display of component battery voltages (`SL`, `SR`, `FD`, `RD` / `RM`) directly on Karoo ride pages with automatic 5-minute background refresh and instant tap-to-sync.
+- **Karoo-Compliant Widget Layout**: Symmetrical, balanced vertical spacing and single root-container touch handling for seamless long-press editing, moving, and resizing in Karoo Page Builder.
+- **Rock-Solid GATT Connection Stability**:
+  - Implemented 500ms BLE stack reset pulse on connection timeout to automatically flush Android's `BtGatt` daemon and prevent sleep-state connection deadlocks.
+  - Active 3-second `0xFA` Keep-Alive ping during rides to keep WheelTop MCU awake.
+  - Enforced strict Blip scanner deactivation during GATT block pulls and automated hardware-level `ScanFilter` MAC matching.
 
 ### v0.0.3 - Ham 🐵🚀 (First Chimpanzee in Space Release)
 - **3-Way Double-Click Remote Selector**: Integrated DataStore-backed options for Double-Click actions: 1) FD Chainring Toggle, 2) Disable Double-Click (protect FD), or 3) 250ms Burst Shift (Square +2 gears / Circle -2 gears).

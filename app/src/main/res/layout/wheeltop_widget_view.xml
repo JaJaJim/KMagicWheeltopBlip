@@ -4,8 +4,11 @@
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:orientation="vertical"
-    android:gravity="center"
-    android:padding="2dp"
+    android:gravity="center_horizontal|top"
+    android:paddingTop="0dp"
+    android:paddingBottom="12dp"
+    android:paddingLeft="2dp"
+    android:paddingRight="2dp"
     android:background="@android:color/transparent">
 
     <!-- Top Row -->
@@ -15,7 +18,8 @@
         android:layout_height="0dp"
         android:layout_weight="1"
         android:orientation="horizontal"
-        android:gravity="center">
+        android:gravity="center_horizontal|top"
+        android:paddingTop="0dp">
 
         <TextView
             android:id="@+id/txt_top_left"
@@ -24,7 +28,7 @@
             android:layout_weight="1"
             android:gravity="center"
             android:textColor="#FFFFFF"
-            android:textSize="11sp"
+            android:textSize="12sp"
             android:textStyle="bold"
             android:text="SL --V" />
 
@@ -46,7 +50,7 @@
             android:layout_weight="1"
             android:gravity="center"
             android:textColor="#FFFFFF"
-            android:textSize="11sp"
+            android:textSize="12sp"
             android:textStyle="bold"
             android:text="SR --V" />
     </LinearLayout>
@@ -58,7 +62,8 @@
         android:layout_height="0dp"
         android:layout_weight="1"
         android:orientation="horizontal"
-        android:gravity="center">
+        android:gravity="center_horizontal|top"
+        android:paddingTop="0dp">
 
         <TextView
             android:id="@+id/txt_bottom_left"
@@ -67,7 +72,7 @@
             android:layout_weight="1"
             android:gravity="center"
             android:textColor="#FFFFFF"
-            android:textSize="11sp"
+            android:textSize="12sp"
             android:textStyle="bold"
             android:text="FD --V" />
 
@@ -89,7 +94,7 @@
             android:layout_weight="1"
             android:gravity="center"
             android:textColor="#FFFFFF"
-            android:textSize="11sp"
+            android:textSize="12sp"
             android:textStyle="bold"
             android:text="RD --V" />
     </LinearLayout>

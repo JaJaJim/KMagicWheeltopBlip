@@ -33,12 +33,6 @@ enum class ConnectionState {
     CONNECTED
 }
 
-enum class GattOwner {
-    NONE,
-    RIDE_DATAFIELD,
-    APP_CONFIG
-}
-
 class WheeltopManager private constructor(context: Context) {
 
     private val appContext = context.applicationContext
@@ -80,25 +74,14 @@ class WheeltopManager private constructor(context: Context) {
     private var sessionKeyByte: Byte? = null
     private var initJob: Job? = null
     private var connectTimeoutJob: Job? = null
-    private var blockWatchdogJob: Job? = null
     private var wakeUpPingJob: Job? = null
     private var pullRetryCount = 0
-
-    @Volatile
-    private var isLatched = false
-
-    @Volatile
-    var isShiftInProgress = false
-        private set
 
     @Volatile
     private var pingPongStep = 0
 
     private val _connectionState = MutableStateFlow(ConnectionState.DISCONNECTED)
     val connectionState: StateFlow<ConnectionState> = _connectionState.asStateFlow()
-
-    private val _activeGattOwner = MutableStateFlow(GattOwner.NONE)
-    val activeGattOwner: StateFlow<GattOwner> = _activeGattOwner.asStateFlow()
 
     private val _isRideActive = MutableStateFlow(false)
     val isRideActive: StateFlow<Boolean> = _isRideActive.asStateFlow()
@@ -129,9 +112,6 @@ class WheeltopManager private constructor(context: Context) {
 
     private val _isAuthenticatedState = MutableStateFlow(false)
     val isAuthenticatedState: StateFlow<Boolean> = _isAuthenticatedState.asStateFlow()
-
-    private val _currentRssi = MutableStateFlow<Int?>(null)
-    val currentRssi: StateFlow<Int?> = _currentRssi.asStateFlow()
 
     private val _blockStatusText = MutableStateFlow<String?>("Ready for Pull")
     val blockStatusText: StateFlow<String?> = _blockStatusText.asStateFlow()
@@ -173,33 +153,6 @@ class WheeltopManager private constructor(context: Context) {
                     _lastGattTimestamp.value = timestamp
                 }
             }
-        }
-    }
-
-    fun requestRideDatafieldGattAccess() {
-        if (_activeGattOwner.value == GattOwner.APP_CONFIG) {
-            Log.w(TAG, "===> [PRIORITY PREEMPTION] Ride Datafield requesting VIP GATT access. Releasing App Config GATT lock...")
-            disconnectGatt()
-        }
-        _activeGattOwner.value = GattOwner.RIDE_DATAFIELD
-    }
-
-    fun requestAppConfigGattAccess() {
-        if (_activeGattOwner.value == GattOwner.RIDE_DATAFIELD) {
-            Log.i(TAG, "===> [PRIORITY YIELD] Ride Datafield active on screen. App Config deferring to Ride Datafield...")
-            return
-        }
-        _activeGattOwner.value = GattOwner.APP_CONFIG
-    }
-
-    fun releaseAppConfigGattLock() {
-        Log.i(TAG, "===> [AUTO-YIELD] App Config releasing GATT lock on pause/stop...")
-        _activeGattOwner.value = GattOwner.NONE
-        if (!_isRideActive.value && !_isPullingGattBlocks.value) {
-            wakeUpPingJob?.cancel()
-            wakeUpPingJob = null
-            Log.i(TAG, "===> [HARD CANCEL] Cancelling 3s Keep-Alive Ping & disconnecting GATT on Config UI exit...")
-            disconnectGatt()
         }
     }
 
@@ -252,8 +205,7 @@ class WheeltopManager private constructor(context: Context) {
                     _connectionState.value == ConnectionState.CONNECTED &&
                     _isRideActive.value &&
                     _areGattBlocksFullyRead.value &&
-                    !_isPullingGattBlocks.value &&
-                    !isShiftInProgress
+                    !_isPullingGattBlocks.value
                 ) {
                     Log.i(TAG, "===> [3s KEEP-ALIVE PING] Sending 1-byte 0xFA Pipe Opener to keep WheelTop MCU awake...")
                     sendAppProtocolCommand("3s Keep-Alive", 0xFA, byteArrayOf(0x80.toByte()))
@@ -379,12 +331,13 @@ class WheeltopManager private constructor(context: Context) {
         connectTimeoutJob = scope.launch(Dispatchers.IO) {
             delay(8_000) // 8-second hard safety timeout
             if (_isPullingGattBlocks.value && pingPongStep < 6) {
-                Log.w(TAG, "[PULL ATTEMPT $pullRetryCount TIMED OUT] Performing 2s modem cooldown & retrying endlessly...")
+                Log.w(TAG, "[PULL ATTEMPT $pullRetryCount TIMED OUT] Flushing Android BtGatt stack & retrying...")
                 val currentMac = mac
                 disconnectGatt()
 
                 scope.launch(Dispatchers.IO) {
-                    delay(2000) // 2s Qualcomm modem quiet cooldown
+                    performGattStackResetPulse(currentMac)
+                    delay(1500) // 1.5s quiet cooldown
                     if (_isPullingGattBlocks.value || _isRideActive.value) {
                         _isPullingGattBlocks.value = true
                         executePullAttempt(currentMac)
@@ -398,6 +351,28 @@ class WheeltopManager private constructor(context: Context) {
             startInitializationSequence()
         } else {
             connectToBoundDevice(mac)
+        }
+    }
+
+    @SuppressLint("MissingPermission")
+    private suspend fun performGattStackResetPulse(mac: String) {
+        val scanner = bluetoothAdapter?.bluetoothLeScanner ?: return
+        try {
+            Log.i(TAG, "===> [GATT STACK RESET PULSE] Running 500ms BLE scan pulse to flush Android BtGatt daemon for MAC: $mac")
+            val filter = android.bluetooth.le.ScanFilter.Builder()
+                .setDeviceAddress(mac)
+                .build()
+            val settings = android.bluetooth.le.ScanSettings.Builder()
+                .setScanMode(android.bluetooth.le.ScanSettings.SCAN_MODE_LOW_LATENCY)
+                .build()
+
+            val dummyCallback = object : android.bluetooth.le.ScanCallback() {}
+            scanner.startScan(listOf(filter), settings, dummyCallback)
+            delay(500)
+            scanner.stopScan(dummyCallback)
+            Log.i(TAG, "===> [GATT STACK RESET PULSE COMPLETE] Android BtGatt daemon table flushed successfully.")
+        } catch (e: Exception) {
+            Log.e(TAG, "Error performing BLE scan reset pulse: ${e.message}")
         }
     }
 
@@ -449,15 +424,12 @@ class WheeltopManager private constructor(context: Context) {
         Log.i(TAG, "[RULE 4] disconnectGatt() invoked. Force cancelling jobs, closing GATT socket, and resetting state...")
         _areGattBlocksFullyRead.value = false
         remoteManager.pauseScan()
-        blockWatchdogJob?.cancel()
-        blockWatchdogJob = null
         connectTimeoutJob?.cancel()
         connectTimeoutJob = null
         initJob?.cancel()
         initJob = null
         wakeUpPingJob?.cancel()
         wakeUpPingJob = null
-        isLatched = false
 
         try {
             activeGatt?.disconnect()
@@ -476,7 +448,6 @@ class WheeltopManager private constructor(context: Context) {
         _connectionState.value = ConnectionState.DISCONNECTED
         _isAuthenticatedState.value = false
         sessionKeyByte = null
-        _currentRssi.value = null
     }
 
     private val gattCallback = object : BluetoothGattCallback() {
@@ -696,7 +667,7 @@ class WheeltopManager private constructor(context: Context) {
     }
 
     @SuppressLint("MissingPermission")
-    private suspend fun sendRawFrame(actionName: String, bytes: ByteArray): Boolean {
+    private fun sendRawFrame(actionName: String, bytes: ByteArray): Boolean {
         val gatt = activeGatt
         val tx = txCharacteristic
 
@@ -760,7 +731,7 @@ class WheeltopManager private constructor(context: Context) {
         var crc = 0xFFFF
         for (b in bytes) {
             crc = crc xor (b.toInt() and 0xFF)
-            for (i in 0 until 8) {
+            repeat(8) {
                 crc = if ((crc and 0x0001) != 0) {
                     (crc ushr 1) xor 0xA001
                 } else {

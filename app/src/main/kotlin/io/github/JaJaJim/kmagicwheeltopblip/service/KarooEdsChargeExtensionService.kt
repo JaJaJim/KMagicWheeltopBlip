@@ -24,6 +24,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
 
 class KarooEdsChargeExtensionService : KarooExtension("kmagic-wheeltop-blip", BuildConfig.VERSION_NAME) {
@@ -112,13 +113,16 @@ class KarooEdsChargeExtensionService : KarooExtension("kmagic-wheeltop-blip", Bu
                     wheeltopManager.lastGattAsciiText,
                     wheeltopManager.blockStatusText,
                     wheeltopManager.isPullingGattBlocks,
-                    wheeltopManager.boundMacAddress
-                ) { asciiText, blockStatus, isPulling, boundMac ->
-                    Tuple4(asciiText, blockStatus, isPulling, boundMac)
-                }.collectLatest { (asciiText, blockStatus, isPulling, boundMac) ->
+                    wheeltopManager.boundMacAddress,
+                    wheeltopManager.boundDeviceName
+                ) { asciiText, blockStatus, isPulling, boundMac, boundName ->
+                    Tuple5(asciiText, blockStatus, isPulling, boundMac, boundName)
+                }
+                .distinctUntilChanged()
+                .collectLatest { (asciiText, blockStatus, isPulling, boundMac, boundName) ->
                     val remoteViews = RemoteViews(context.packageName, R.layout.wheeltop_widget_view)
 
-                    // Touch Click-Sensitivity on all child views
+                    // Touch Click-Sensitivity on root container only
                     val clickIntent = Intent("io.github.JaJaJim.kmagicwheeltopblip.WIDGET_CLICK").apply {
                         setPackage(context.packageName)
                     }
@@ -129,14 +133,6 @@ class KarooEdsChargeExtensionService : KarooExtension("kmagic-wheeltop-blip", Bu
                         PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
                     )
                     remoteViews.setOnClickPendingIntent(R.id.widget_container, pendingIntent)
-                    remoteViews.setOnClickPendingIntent(R.id.row_top, pendingIntent)
-                    remoteViews.setOnClickPendingIntent(R.id.row_bottom, pendingIntent)
-                    remoteViews.setOnClickPendingIntent(R.id.txt_top_left, pendingIntent)
-                    remoteViews.setOnClickPendingIntent(R.id.txt_top_right, pendingIntent)
-                    remoteViews.setOnClickPendingIntent(R.id.txt_top_center, pendingIntent)
-                    remoteViews.setOnClickPendingIntent(R.id.txt_bottom_left, pendingIntent)
-                    remoteViews.setOnClickPendingIntent(R.id.txt_bottom_right, pendingIntent)
-                    remoteViews.setOnClickPendingIntent(R.id.txt_bottom_center, pendingIntent)
 
                     val hasError = (!isPulling && (blockStatus == "Connection Failed" || blockStatus == "Block Read Failed" || boundMac.isNullOrBlank()))
 
@@ -303,4 +299,4 @@ class KarooEdsChargeExtensionService : KarooExtension("kmagic-wheeltop-blip", Bu
     }
 }
 
-private data class Tuple4<A, B, C, D>(val first: A, val second: B, val third: C, val fourth: D)
+private data class Tuple5<A, B, C, D, E>(val first: A, val second: B, val third: C, val fourth: D, val fifth: E)

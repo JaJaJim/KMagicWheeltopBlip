@@ -4,6 +4,7 @@ import android.annotation.SuppressLint
 import android.bluetooth.BluetoothAdapter
 import android.bluetooth.BluetoothManager
 import android.bluetooth.le.ScanCallback
+import android.bluetooth.le.ScanFilter
 import android.bluetooth.le.ScanResult
 import android.bluetooth.le.ScanSettings
 import android.content.Context
@@ -235,15 +236,21 @@ class MagicshineRemoteManager private constructor(private val appContext: Contex
             scanner.stopScan(scanCallback)
         } catch (_: Exception) {}
 
+        val filters = listOf(
+            ScanFilter.Builder()
+                .setDeviceAddress(boundMac)
+                .build()
+        )
+
         val settings = ScanSettings.Builder()
             .setScanMode(ScanSettings.SCAN_MODE_LOW_LATENCY)
             .build()
 
         try {
-            scanner.startScan(null, settings, scanCallback)
+            scanner.startScan(filters, settings, scanCallback)
             isScanningInternal = true
             _connectionState.value = ConnectionState.CONNECTED
-            Log.i(TAG, "Magicshine BLE Low Latency ScanRecord engine ACTIVE for MAC: $boundMac")
+            Log.i(TAG, "Magicshine BLE Hardware-Filtered Low Latency Scan ACTIVE for MAC: $boundMac")
         } catch (e: Exception) {
             Log.e(TAG, "Error starting scan: ${e.message}")
             _connectionState.value = ConnectionState.DISCONNECTED
@@ -271,7 +278,9 @@ class MagicshineRemoteManager private constructor(private val appContext: Contex
             val boundMac = _boundRemoteMac.value
 
             if (!boundMac.isNullOrBlank() && address.equals(boundMac, ignoreCase = true)) {
-                _connectionState.value = ConnectionState.CONNECTED
+                if (_connectionState.value != ConnectionState.CONNECTED) {
+                    _connectionState.value = ConnectionState.CONNECTED
+                }
                 val bytes = extractSDataBytes(result)
                 if (bytes.isNotEmpty()) {
                     handleSDataReceived(bytes)

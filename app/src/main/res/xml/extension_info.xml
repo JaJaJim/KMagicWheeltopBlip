@@ -1,13 +1,13 @@
 <?xml version="1.0" encoding="utf-8"?>
 <ExtensionInfo
     id="kmagic-wheeltop-blip"
-    displayName="WheelTop"
+    displayName="EDS TX"
     description="WheelTop EDS &amp; Magicshine Remote Extension"
     icon="@drawable/ic_logo">
 
     <DataType
         typeId="kmagic-wheeltop-blip"
-        displayName="WheelTop"
+        displayName="EDS TX"
         description="WheelTop EDS Batteries &amp; Remote Extension"
         graphical="true"
         icon="@drawable/ic_logo" />
