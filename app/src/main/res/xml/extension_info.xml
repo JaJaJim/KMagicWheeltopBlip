@@ -2,13 +2,13 @@
 <ExtensionInfo
     id="kmagic-wheeltop-blip"
     displayName="EDS TX"
-    description="WheelTop EDS &amp; Magicshine Remote Extension"
+    description="by JaJaJim (Peter Weber) - WheelTop EDS &amp; Magicshine Remote Extension"
     icon="@drawable/ic_logo">
 
     <DataType
         typeId="kmagic-wheeltop-blip"
         displayName="EDS TX"
-        description="WheelTop EDS Batteries &amp; Remote Extension"
+        description="by JaJaJim (Peter Weber) - WheelTop EDS Batteries &amp; Remote Extension"
         graphical="true"
         icon="@drawable/ic_logo" />
 </ExtensionInfo>
