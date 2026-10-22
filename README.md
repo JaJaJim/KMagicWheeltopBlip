@@ -1,4 +1,4 @@
-# KMagicWheeltopBlip 🚴‍♂️⚡🐱🐵🚀
+# KMagicWheeltopBlip 🚴‍♂️⚡🐱🚀
 
 A Hammerhead Karoo extension for **Wheeltop EDS (TX, OX, GX, GeX)** electronic shifting systems and **Magicshine M0-C0 MJ_6558** wireless handlebar blip remotes.
 
